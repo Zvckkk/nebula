@@ -1,0 +1,37 @@
+Cloudsmith Integration in Nebula Downloader
+==================================================================
+Documentation of the changes to support cloudsmith in nebula downloader
+
+Features added:
+Cloudsmith API: it uses cloudsmith API call to fetch the metadata and download files. 
+                filtered it primarily with versions. service account slug name (e.g., haribo-habo-bun)
+                and service account API token is needed to pass in the cli argument.
+
+Board matching & Date matching: Using the selected repo metada, board matching and date matching is
+                                done to ensure the correct file is being fetched. if the passed <branch>
+                                includes "/" (e.g., 2022_r1/2024_00_00_04_00_00), it will download the file
+                                with the specific date, else it will download the latest date version.
+
+SHA256 verification: using the metadata fetched from cloudsmith API, autmatically verifies the download through
+                     cross checking of SHA256.
+
+### CLI example:
+
+
+nebula show-log dl.bootfiles --board-name=<board-name> --source=cloudsmith --branch=<branch> 
+--filetype=boot_partition --cloudsmith-token=<service-account API token> --service-user=<service-user slug-name>
+
+Major changes in the code:
+========================================================================
+_get_files_boot_partition:
+   - Accepts and uses `service_user` and `cloudsmith_token` for Cloudsmith downloads.
+   - Checks if `source == "cloudsmith"` to trigger Cloudsmith-specific logic.
+   - If `branch` contains "/", performs an exact date and board match.
+   - If not, calls `_get_newest_cloudsmith_package` to select the newest dated version for the board.
+
+_get_newest_cloudsmith_package:
+    -strictly match the board name and the latest date when selecting the package.
+    - Only considers packages where the board in the version string matches the requested board.
+
+added conditional statements to skip artifactory methods when source == "cloudsmith"
+

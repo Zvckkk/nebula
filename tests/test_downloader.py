@@ -68,7 +68,7 @@ def test_downloader():
 
 
 @pytest.mark.parametrize("board_name", ["zynq-zc706-adv7511-fmcomms11"])
-@pytest.mark.parametrize("branch", ["release", "master", "main"])
+@pytest.mark.parametrize("branch", ["release", "main"]) 
 @pytest.mark.parametrize("filetype", ["boot_partition"])
 def test_boot_downloader(test_downloader, board_name, branch, filetype):
     test_downloader(board_name, branch, filetype)
@@ -81,7 +81,7 @@ def test_boot_downloader(test_downloader, board_name, branch, filetype):
 
 
 @pytest.mark.parametrize("board_name", ["max32650_adxl355"])
-@pytest.mark.parametrize("branch", ["master"])
+@pytest.mark.parametrize("branch", ["main"]) 
 @pytest.mark.parametrize("filetype", ["noos"])
 def test_noos_downloader(test_downloader, board_name, branch, filetype):
     test_downloader(board_name, branch, filetype)
@@ -92,7 +92,7 @@ def test_noos_downloader(test_downloader, board_name, branch, filetype):
 
 @pytest.mark.skip(reason="Not built")
 @pytest.mark.parametrize("board_name", ["kc705_fmcomms4"])
-@pytest.mark.parametrize("branch", ["release", "master"])
+@pytest.mark.parametrize("branch", ["release"])
 @pytest.mark.parametrize("filetype", ["microblaze"])
 def test_microblaze_downloader(test_downloader, board_name, branch, filetype):
     test_downloader(board_name, branch, filetype)
@@ -106,7 +106,7 @@ def test_microblaze_downloader(test_downloader, board_name, branch, filetype):
 
 
 @pytest.mark.parametrize("board_name", ["eval-adxrs290-pmdz"])
-@pytest.mark.parametrize("branch", ["rpi-5.10.y"])
+@pytest.mark.parametrize("branch", ["rpi-6.1.y"])
 @pytest.mark.parametrize("filetype", ["rpi"])
 def test_rpi_downloader(test_downloader, board_name, branch, filetype):
     test_downloader(board_name, branch, filetype)
@@ -135,7 +135,7 @@ def test_firmware_downloader(test_downloader, board_name, branch, filetype, sour
     "url_template",
     [
         "https://artifactory.analog.com/ui/repos/tree/Properties/sdg-generic-development"
-        + "%2Ftest_upload%2Fmain%2FHDL_PRs%2Fpr_1251%2F2024_02_27-08_40_22"
+        + "%2Ftest_boot_files%2Fmain%2FHDL_PRs%2Fpr_1542%2F2025_01_17-09_57_14"
     ],
 )
 def test_boot_downloader_new_flow(
@@ -161,7 +161,7 @@ def test_image_downloader():
 @pytest.mark.parametrize(
     "url",
     [
-        "https://artifactory.analog.com/ui/repos/tree/Properties/sdg-generic-development%2Ftest_upload%2Fmain%2FHDL_PRs%2Fpr_1251%2F2024_02_27-08_40_22"
+        "https://artifactory.analog.com/ui/repos/tree/Properties/sdg-generic-development%2Ftest_boot_files%2Fmain%2FHDL_PRs%2Fpr_1542%2F2025_01_17-09_57_14"
     ],
 )
 def test_get_info_txt(url):

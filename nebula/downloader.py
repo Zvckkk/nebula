@@ -25,7 +25,9 @@ from nebula.common import utils
 log = logging.getLogger(__name__)
 
 
-def listFD(url):
+def listFD(url, source ="artifactory"):
+    if source == "cloudsmith":
+        return None
     page = requests.get(url).text
     soup = BeautifulSoup(page, "html.parser")
     return [url + "/" + node.get("href") for node in soup.find_all("a")]
@@ -38,7 +40,9 @@ def convert_to_datetime(date):
         return datetime.strptime(date[:10], "%Y_%m_%d")
 
 
-def get_firmware_version(links):
+def get_firmware_version(links, source = "artifactory"):
+    if source == "cloudsmith":
+        version = None
     version = None
     for link in links:
         file = link.split("/")[-1]
@@ -47,7 +51,9 @@ def get_firmware_version(links):
     return version
 
 
-def get_latest_release(links):
+def get_latest_release(links, source = "artifactory"):
+    if source == "cloudsmith":
+        return None
     latest = "0000_r1"
     for link in links:
         hdl_release = re.findall("hdl_[0-9]{4}_r[1-2]", link, re.IGNORECASE)
@@ -60,7 +66,9 @@ def get_latest_release(links):
     return latest
 
 
-def get_newest_folder(links):
+def get_newest_folder(links, source = "artifactory"):
+    if source == "cloudsmith":
+        return None
     dates = []
     for link in links:
         folder = link.split("/")[-2]
@@ -86,7 +94,9 @@ def get_newest_folder(links):
         return dates[-1]
 
 
-def get_gitsha(url, daily=False, linux=False, hdl=False, build_info=None):
+def get_gitsha(url, daily=False, linux=False, hdl=False, build_info=None, source = "artifactory"):
+    if source == "cloudsmith":
+        return None
     dest = "outs"
     if not os.path.isdir(dest):
         os.mkdir(dest)
@@ -135,7 +145,9 @@ def get_gitsha(url, daily=False, linux=False, hdl=False, build_info=None):
             yaml.dump(bootpartition, f)
 
 
-def gen_url(ip, branch, folder, filename, addl, url_template):
+def gen_url(ip, branch, folder, filename, addl, url_template, source = "artifactory"):
+    if source == "cloudsmith":
+        return None
     if branch == "master":
         if bool(re.search("boot_partition", url_template)):
             url = url_template.format(ip, branch, "", "")
@@ -175,13 +187,18 @@ def gen_url(ip, branch, folder, filename, addl, url_template):
         return url_template.format(ip, release_folder, folder, filename)
 
 
-def list_files_in_remote_folder(url):
+def list_files_in_remote_folder(url, source = "artifactory"):
+    if source == "cloudsmith":
+        return None
     """List files in remote artifactory folder"""
     path = ArtifactoryPath(url)
     return path.listdir()
 
 
-def get_artifact_paths(toolbox, branch, build, ext, root="dev"):
+def get_artifact_paths(toolbox, branch, build, ext, root="dev", source = "artifactory"):
+    if source == "cloudsmith":
+        # cloudsmith does not support directory listing
+        return None
     log.info(f"Getting {ext} files from {branch} build {build} in {toolbox}")
     path = ArtifactoryPath(
         f"https://artifactory.analog.com/artifactory/sdg-generic-development/{toolbox}/{root}/{branch}/{build}"
@@ -213,7 +230,10 @@ def filter_boards(paths, fmc, fpga):
     return filtered_paths, rd_names
 
 
-def download_artifact(path, output_folder):
+def download_artifact(path, output_folder, source = "artifactory"):
+    if source == "cloudsmith":
+        # cloudsmith does not support directory listing
+        return
     if not os.path.isdir(output_folder):
         os.mkdir(output_folder)
     out_filename = os.path.join(output_folder, path.name)
@@ -294,7 +314,9 @@ def download_matlab_generate_bootbin(
     return paths, rd_names
 
 
-def sanitize_artifactory_url(url):
+def sanitize_artifactory_url(url, source = "artifactory"):
+    if source == "cloudsmith":
+        return None
     url = re.sub(r"%2F", "/", url)
     url = re.sub("/ui/repos/tree/Properties/", "/artifactory/", url)
     # rebase url
@@ -302,7 +324,9 @@ def sanitize_artifactory_url(url):
     return url
 
 
-def get_info_txt(url):
+def get_info_txt(url, source = "artifactory"):
+    if source == "cloudsmith":
+        return None
     art_path = ArtifactoryPath(sanitize_artifactory_url(url))
     info_txt_path = None
     for p in art_path:
@@ -333,13 +357,14 @@ def get_info_txt(url):
 
 
 class downloader(utils):
-    def __init__(self, http_server_ip=None, yamlfilename=None, board_name=None):
+    def __init__(self, http_server_ip=None, yamlfilename=None, board_name=None, service_user=None, cloudsmith_token=None):
         self.reference_boot_folder = None
         self.devicetree_subfolder = None
         self.boot_subfolder = None
         self.hdl_folder = None
         self.http_server_ip = http_server_ip
         self.url = None
+        self.board_name = board_name
         # rpi fields
         self.devicetree = None
         self.devicetree_overlay = None
@@ -347,6 +372,8 @@ class downloader(utils):
         self.modules = None
         self.no_os_project = None
         self.platform = None
+        self.service_user = service_user
+        self.cloudsmith_token = cloudsmith_token
         # update from config
         self.update_defaults_from_yaml(
             yamlfilename, __class__.__name__, board_name=board_name
@@ -399,6 +426,26 @@ class downloader(utils):
             filename = os.path.join(dest, ver)
         self.download(url, filename)
 
+    def _get_newest_cloudsmith_package (self, all_packages, branch, filename):
+        date_pkgs = []
+        general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
+        for pkg in all_packages:
+            pkg_version = pkg.get("version","")
+            version_part = pkg_version.split("/")
+            board_in_version = version_part[-1] if len(version_part) >= 3 else ""
+            board_match = (
+                board_in_version == self.board_name or (filename in ["uImage", "Image", "zImage"] and board_in_version in general_image_boards)
+            )
+            if pkg.get("filename") == filename and pkg_version.startswith(branch + "/") and board_match:
+                date_part = pkg_version.split("/")[1].split("/")[0]
+                if re.match(r"\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}", date_part):
+                    date_pkgs.append((date_part, pkg))
+        if not date_pkgs:
+            return None
+        date_pkgs.sort(key=lambda x: datetime.strptime(x[0], "%Y_%m_%d-%H_%M_%S"), reverse=True)
+        return date_pkgs[0][1]  # newest package
+    
+        
     def _get_file(
         self,
         filename,
@@ -407,6 +454,7 @@ class downloader(utils):
         source_root,
         branch,
         addl=None,
+        version=None,
         url_template=None,
     ):
         if source == "artifactory":
@@ -438,7 +486,7 @@ class downloader(utils):
             raise Exception(
                 "No server IP or domain name specified. Must be defined in yaml or provided as input"
             )
-
+    
         new_flow = False
         for pipeline in [
             "HDL_PRs",
@@ -473,7 +521,7 @@ class downloader(utils):
                 except WindowsError:
                     os.remove(new_fname)
                     os.rename(old_fname, new_fname)
-
+    
     def _get_files_boot_partition(
         self,
         reference_boot_folder,
@@ -485,9 +533,110 @@ class downloader(utils):
         kernel,
         kernel_root,
         dt,
+        cloudsmith_token=None,
         url_template=None,
+        service_user=None,
     ):
-        if source == "artifactory":
+        if source == "cloudsmith":
+            log.info("Getting standard boot files (Cloudsmith)")
+            api_key = cloudsmith_token
+            if not api_key:
+                log.error("Cloudsmith API key missing. Set CLOUDSMITH_API_KEY environment variable.")
+                raise Exception("Cloudsmith API key missing.")
+
+            repo = "adi/sdp-ph-common"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+            }
+            query_branch = branch
+            url = f"https://api.cloudsmith.io/v1/packages/{repo}/?query=version:{query_branch}"
+
+            log.info(f"Fetching Cloudsmith metadata via REST API: {url}")
+            all_packages = []
+            while url:
+                resp = requests.get(url, headers=headers)
+                resp.raise_for_status()
+                page = resp.json()
+                if isinstance(page, dict) and "results" in page:
+                    all_packages.extend(page["results"])
+                    url = page.get("next")
+                else:
+                    all_packages.extend(page)
+                    url = None
+
+            log.info(f"Total packages fetched: {len(all_packages)}")
+            for pkg in all_packages:
+                log.info(f"Package: filename={pkg.get('filename')}, version={pkg.get('version')}")
+
+            boot_files = [kernel, "BOOT.BIN", "bootgen_sysfiles.tgz", dt]
+            general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
+            for filename in boot_files:
+                if "/" in branch:
+                    matched_pkg = None
+                    for pkg in all_packages:
+                        board_match = (
+                            self.board_name in pkg.get("version","") or
+                            (filename in ["uImage","Image","zImage"] and any(gb in pkg.get("version","") for gb in general_image_boards))
+                        )
+                        if (pkg.get("filename") == filename
+                            and pkg.get("version","").startswith(branch)
+                            and board_match
+                        ):
+                            matched_pkg = pkg
+                            break
+                    if matched_pkg:
+                        cdn_url = matched_pkg.get("cdn_url")
+                        sha256 = matched_pkg.get("checksum_sha256")
+                        dest = "outs"
+                        if not os.path.isdir(dest):
+                            os.mkdir(dest)
+                        out_path = os.path.join(dest, filename)
+                        log.info(f"Downloading {filename} from {cdn_url} ...")
+                        try:
+                            self.download(cdn_url, out_path, service_user=service_user, cloudsmith_token=cloudsmith_token)
+                        except Exception as e:
+                            log.error(f"Download failed: {e}")
+                        if sha256:
+                            try:
+                                self.check(out_path, sha256, hash_type="sha256")
+                            except Exception as e:
+                                log.error(f"SHA256 check failed: {e}")
+                                raise
+                        log.info(f"Downloaded and verified: {out_path}")
+                    else:
+                        log.error(f"No package found for {filename} with version {branch} and board {self.board_name}")
+                        raise Exception(f"No package found for {filename} with version {branch} and board {self.board_name}")
+                else:
+                    log.warning(f"No direct match found for {filename} in branch {branch}. Attempting to find newest dated version.")
+                    newest_pkg = self._get_newest_cloudsmith_package(all_packages, branch, filename)
+                    if newest_pkg: 
+                        pkg_version = newest_pkg.get("version")
+                        log.info(f"Matched filename: {filename}, newest package version: {pkg_version}")
+                        cdn_url = newest_pkg.get("cdn_url")
+                        sha256 = newest_pkg.get("checksum_sha256")
+                        dest = "outs"
+                        if not os.path.isdir(dest):
+                            os.mkdir(dest)
+                        out_path = os.path.join(dest, filename)
+                        log.info(f"Downloading {filename} from {cdn_url} ...")
+                        try:
+                            self.download(cdn_url, out_path, service_user=service_user, cloudsmith_token=cloudsmith_token)
+                        except Exception as e:
+                            log.error(f"Download failed: {e}")
+                            raise
+                        if sha256:
+                            try:
+                                self.check(out_path, sha256, hash_type="sha256")
+                            except Exception as e:
+                                log.error(f"SHA256 check failed: {e}")
+                                raise
+                        log.info(f"Downloaded and verified: {out_path}")
+                    else:
+                        log.error(f"No dated version found for {filename} in branch {branch}")
+                        raise Exception(f"No dated version found for {filename} in branch {branch}")
+            return None
+        elif source == "artifactory":
             if url_template:
                 url_template = (
                     sanitize_artifactory_url(url_template) + "/boot_partition/{}/{}"
@@ -541,8 +690,9 @@ class downloader(utils):
             branch,
             url_template=url_template,
         )
-
-        if source == "artifactory":
+        if source == "cloudsmith":
+            return None
+        elif source == "artifactory":
             # check if info_txt is present
             try:
                 build_info = get_info_txt(url_template)
@@ -556,7 +706,10 @@ class downloader(utils):
         url_template = None
         output = "hdl_output" if hdl_output else "boot_files"
         # set hdl url template
-        if source == "artifactory":
+        if source == "cloudsmith":
+            # create a method for cloudsmith here
+            return None
+        elif source == "artifactory":
             if branch == "master":
                 url_template = (
                     "https://{}/artifactory/sdg-generic-development/hdl/master/{}/{}/{}"
@@ -628,7 +781,9 @@ class downloader(utils):
     ):
         url_template = None
         kernel_root = "zynq" if kernel_root == "zynq-common" else "zynq_u"
-        if source == "artifactory":
+        if source == "cloudsmith":
+            return None
+        elif source == "artifactory":
             design_source_root = arch + "/" + kernel_root
             # set linux url template
             if branch == "master":
@@ -801,6 +956,8 @@ class downloader(utils):
         microblaze=False,
         rpi=False,
         url_template=None,
+        service_user=None,
+        cloudsmith_token=None,
     ):
         if not kernel:
             kernel = False
@@ -893,7 +1050,9 @@ class downloader(utils):
                         kernel,
                         kernel_root,
                         dt,
-                        url_template,
+                        cloudsmith_token=self.cloudsmith_token,
+                        url_template=url_template,
+                        service_user=self.service_user
                     )
                 elif folder == "hdl_linux":
                     self._get_files_hdl(
@@ -924,6 +1083,8 @@ class downloader(utils):
         microblaze=None,
         rpi=None,
         url_template=None,
+        service_user=None,
+        cloudsmith_token=None,
     ):
         """download_boot_files Download bootfiles for target design.
         This method can download or move files from different locations
@@ -1048,48 +1209,81 @@ class downloader(utils):
         session.mount("https://", adapter)
         return session
 
-    def download(self, url, fname):
-        resp = self.retry_session().get(url, stream=True)
-        if not resp.ok:
-            raise Exception(os.path.basename(fname) + " - File not found!")
-        total = int(resp.headers.get("content-length", 0))
-        sha256_hash = hashlib.sha256()
-        with open(fname, "wb") as file, tqdm(
-            desc=fname,
-            total=total,
-            unit="iB",
-            unit_scale=True,
-            unit_divisor=1024,
-        ) as bar:
-            for data in resp.iter_content(chunk_size=1024):
-                size = file.write(data)
-                sha256_hash.update(data)
-                bar.update(size)
-        hash = sha256_hash.hexdigest()
-        with open(os.path.join(os.path.dirname(fname), "hashes.txt"), "a") as h:
-            h.write(f"{os.path.basename(fname)},{hash}\n")
+    def download(self, url, fname, service_user=None, cloudsmith_token=None):
+        #Cloudsmith path
+        if "cloudsmith.io" in url:
+            #service user and cloudsmith token are obtain from nebula cli using --service-user and --cloudsmith-token
+            service_user = self.service_user
+            cloudsmith_token = self.cloudsmith_token
+            if not service_user or not cloudsmith_token:
+                raise Exception("Cloudsmith credentials missing, make sure service user and token are provided")
+            resp = self.retry_session().get(url, stream=True, auth=(service_user, cloudsmith_token))
+            resp.raise_for_status()
+            total = int(resp.headers.get("content-length", 0))
+            sha256_hash = hashlib.sha256()
+            with open(fname, "wb") as file, tqdm(
+                desc=fname,
+                total=total,
+                unit="iB",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as bar:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    size = file.write(chunk)
+                    sha256_hash.update(chunk)
+                    bar.update(size)
+            hash = sha256_hash.hexdigest()
+            with open(os.path.join(os.path.dirname(fname), "hashes.txt"), "a") as h:
+                h.write(f"{os.path.basename(fname)},{hash}\n")
+            
+        #artifactory path
+        else:
+            resp = self.retry_session().get(url, stream=True)
+            if not resp.ok:
+                raise Exception(os.path.basename(fname) + " - File not found!")
+            total = int(resp.headers.get("content-length", 0))
+            sha256_hash = hashlib.sha256()
+            with open(fname, "wb") as file, tqdm(
+                desc=fname,
+                total=total,
+                unit="iB",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as bar:
+                for data in resp.iter_content(chunk_size=1024):
+                    size = file.write(data)
+                    sha256_hash.update(data)
+                    bar.update(size)
+            hash = sha256_hash.hexdigest()
+            with open(os.path.join(os.path.dirname(fname), "hashes.txt"), "a") as h:
+                h.write(f"{os.path.basename(fname)},{hash}\n")
 
-    def check(self, fname, ref):
-        hash_md5 = hashlib.md5()
+    def check(self, fname, ref, hash_type="md5"):
+        if hash_type == "md5":
+            hash_obj = hashlib.md5()
+        elif hash_type == "sha256":
+            hash_obj = hashlib.sha256()
+        else:
+            raise Exception("Unsupported hash type")
         tlfile = pathlib.Path(fname)
         total = os.path.getsize(tlfile)
         with open(fname, "rb") as f, tqdm(
-            desc="Hashing: " + fname,
+            desc=f"Hashing: {fname}",
             total=total,
             unit="iB",
             unit_scale=True,
             unit_divisor=1024,
         ) as bar:
             for chunk in iter(lambda: f.read(4096), b""):
-                hash_md5.update(chunk)
+                hash_obj.update(chunk)
                 size = len(chunk)
                 bar.update(size)
-        h = hash_md5.hexdigest()
+        h = hash_obj.hexdigest()
         if h == ref:
-            print("MD5 Check: PASSED")
+            log.info(f"{hash_type.upper()} Check: PASSED")
         else:
-            print("MD5 Check: FAILEDZz")
-            raise Exception("MD5 hash check failed")
+            log.error(f"{hash_type.upper()} Check: FAILED")
+            raise Exception(f"{hash_type.upper()} hash check failed")
 
     def extract(self, inname, outname):
         tlfile = pathlib.Path(inname)
