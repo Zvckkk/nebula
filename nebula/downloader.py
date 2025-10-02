@@ -25,12 +25,13 @@ from nebula.common import utils
 log = logging.getLogger(__name__)
 
 
-def listFD(url, source ="artifactory"):
+def listFD(url, source = "artifactory"):
     if source == "cloudsmith":
         return None
-    page = requests.get(url).text
-    soup = BeautifulSoup(page, "html.parser")
-    return [url + "/" + node.get("href") for node in soup.find_all("a")]
+    elif source == "artifactory":
+        page = requests.get(url).text
+        soup = BeautifulSoup(page, "html.parser")
+        return [url + "/" + node.get("href") for node in soup.find_all("a")]
 
 
 def convert_to_datetime(date):
@@ -43,172 +44,200 @@ def convert_to_datetime(date):
 def get_firmware_version(links, source = "artifactory"):
     if source == "cloudsmith":
         version = None
-    version = None
-    for link in links:
-        file = link.split("/")[-1]
-        if "zip" in file:
-            version = file
-    return version
+    elif source == "artifactory":
+        version = None
+        for link in links:
+            file = link.split("/")[-1]
+            if "zip" in file:
+                version = file
+        return version
 
 
 def get_latest_release(links, source = "artifactory"):
     if source == "cloudsmith":
         return None
-    latest = "0000_r1"
-    for link in links:
-        hdl_release = re.findall("hdl_[0-9]{4}_r[1-2]", link, re.IGNORECASE)
-        release = re.findall("[0-9]{4}_r[1-2]", link, re.IGNORECASE)
-        if len(hdl_release) == 1 and hdl_release[0].lower() > latest.lower():
-            latest = hdl_release[0]
-        else:
-            if len(release) == 1 and release[0].lower() > latest:
-                latest = release[0]
-    return latest
+    elif source == "artifactory":
+        latest = "0000_r1"
+        for link in links:
+            hdl_release = re.findall("hdl_[0-9]{4}_r[1-2]", link, re.IGNORECASE)
+            release = re.findall("[0-9]{4}_r[1-2]", link, re.IGNORECASE)
+            if len(hdl_release) == 1 and hdl_release[0].lower() > latest.lower():
+                latest = hdl_release[0]
+            else:
+                if len(release) == 1 and release[0].lower() > latest:
+                    latest = release[0]
+        return latest
 
 
-def get_newest_folder(links, source = "artifactory"):
+def get_newest_folder(links_or_packages, source = "artifactory", branch=None, filename=None, board_name= None):
     if source == "cloudsmith":
-        return None
-    dates = []
-    for link in links:
-        folder = link.split("/")[-2]
-        matched = re.match("20[1-2][0,1,2,3,4,5,6,7,8,9]_[0-3][0-9]_[0-3][0-9]", folder)
-        is_match = bool(matched)
+        date_pkgs = []
+        general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
+        for pkg in links_or_packages:
+            pkg_version = pkg.get("version","")
+            version_part = pkg_version.split("/")
+            board_in_version = version_part[-1] if len(version_part) >=3 else ""
+            board_match = (
+                board_in_version == board_name or (filename in ["uImage","Image","zImage"] and board_in_version in general_image_boards)
+            )
+            if (
+                pkg.get("filename") == filename
+                and pkg_version.startswith(branch + "/")
+                and board_match
+            ):
+                date_part = version_part[1] if len(version_part) > 1 else ""
+                if re.match(r"\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}", date_part):
+                    date_pkgs.append((date_part, pkg))
+        if not date_pkgs:
+            return None
+        date_pkgs.sort(key=lambda x: datetime.strptime(x[0], "%Y_%m_%d-%H_%M_%S"), reverse=True)
+        return date_pkgs[0][1] # newest cloudsmith package
+    
+    elif source == "artifactory":
+        dates = []
+        for link in links_or_packages:
+            folder = link.split("/")[-2]
+            matched = re.match("20[1-2][0,1,2,3,4,5,6,7,8,9]_[0-3][0-9]_[0-3][0-9]", folder)
+            is_match = bool(matched)
 
-        if is_match:
-            dates.append(folder)
+            if is_match:
+                dates.append(folder)
 
-    if not dates:
-        raise Exception("No folders found")
-    dates.sort(key=lambda date: convert_to_datetime(date))
+        if not dates:
+            raise Exception("No folders found")
+        dates.sort(key=lambda date: convert_to_datetime(date))
 
-    n = 0
-    content = {"hdl_output": 130, "boot_files": 65, "linux": 4, "bootpartition": 75}
-    for k, v in content.items():
-        if re.search(k, links[-1]):
-            n = v
+        n = 0
+        content = {"hdl_output": 130, "boot_files": 65, "linux": 4, "bootpartition": 75}
+        for k, v in content.items():
+            if re.search(k, links_or_packages[-1]):
+                n = v
 
-    if len(listFD(links[-1])) < n:
-        return dates[-2]
-    else:
-        return dates[-1]
+        if len(listFD(links_or_packages[-1])) < n:
+            return dates[-2]
+        else:
+            return dates[-1]
 
 
 def get_gitsha(url, daily=False, linux=False, hdl=False, build_info=None, source = "artifactory"):
     if source == "cloudsmith":
         return None
-    dest = "outs"
-    if not os.path.isdir(dest):
-        os.mkdir(dest)
-    file = os.path.join(dest, "properties.yaml")
-    with open(file, "a+") as f:
-        path = ArtifactoryPath(str(url))
-        props = path.properties
-        exp = "20[1-2][0-9]_[0-1][0-9]_[0-3][0-9][-_][0-2][0-9]_[0-5][0-9](?:_[0-5][0-9])?"
+    elif source == "artifactory":
+        dest = "outs"
+        if not os.path.isdir(dest):
+            os.mkdir(dest)
+        file = os.path.join(dest, "properties.yaml")
+        with open(file, "a+") as f:
+            path = ArtifactoryPath(str(url))
+            props = path.properties
+            exp = "20[1-2][0-9]_[0-1][0-9]_[0-3][0-9][-_][0-2][0-9]_[0-5][0-9](?:_[0-5][0-9])?"
 
-        if build_info:
-            if build_info["Triggered by"] == "hdl":
-                props["linux_git_sha"] = ["NA"]
-                props["hdl_git_sha"] = [build_info["COMMIT SHA"]]
-            elif build_info["Triggered by"] == "linux":
-                props["linux_git_sha"] = [build_info["COMMIT SHA"]]
-                props["hdl_git_sha"] = ["NA"]
+            if build_info:
+                if build_info["Triggered by"] == "hdl":
+                    props["linux_git_sha"] = ["NA"]
+                    props["hdl_git_sha"] = [build_info["COMMIT SHA"]]
+                elif build_info["Triggered by"] == "linux":
+                    props["linux_git_sha"] = [build_info["COMMIT SHA"]]
+                    props["hdl_git_sha"] = ["NA"]
 
-        try:
-            if not daily:
+            try:
+                if not daily:
+                    bootpartition = {
+                        "bootpartition_folder": re.findall(exp, url)[0],
+                        "linux_git_sha": props["linux_git_sha"][0],
+                        "hdl_git_sha": props["hdl_git_sha"][0],
+                    }
+                    yaml.dump(bootpartition, f)
+                else:
+                    if hdl:
+                        hdl_props = {
+                            "hdl_folder": re.findall(exp, url)[0],
+                            "hdl_git_sha": props["git_sha"][0],
+                        }
+                        yaml.dump(hdl_props, f)
+                    if linux:
+                        linux_props = {
+                            "linux_folder": re.findall(exp, url)[0],
+                            "linux_git_sha": props["git_sha"][0],
+                        }
+                        yaml.dump(linux_props, f)
+            except Exception:
+                # TODO: fetch info.txt and get linux or hdl gitsha from there
                 bootpartition = {
                     "bootpartition_folder": re.findall(exp, url)[0],
-                    "linux_git_sha": props["linux_git_sha"][0],
-                    "hdl_git_sha": props["hdl_git_sha"][0],
+                    "linux_git_sha": "NA",
+                    "hdl_git_sha": "NA",
                 }
                 yaml.dump(bootpartition, f)
-            else:
-                if hdl:
-                    hdl_props = {
-                        "hdl_folder": re.findall(exp, url)[0],
-                        "hdl_git_sha": props["git_sha"][0],
-                    }
-                    yaml.dump(hdl_props, f)
-                if linux:
-                    linux_props = {
-                        "linux_folder": re.findall(exp, url)[0],
-                        "linux_git_sha": props["git_sha"][0],
-                    }
-                    yaml.dump(linux_props, f)
-        except Exception:
-            # TODO: fetch info.txt and get linux or hdl gitsha from there
-            bootpartition = {
-                "bootpartition_folder": re.findall(exp, url)[0],
-                "linux_git_sha": "NA",
-                "hdl_git_sha": "NA",
-            }
-            yaml.dump(bootpartition, f)
 
 
 def gen_url(ip, branch, folder, filename, addl, url_template, source = "artifactory"):
     if source == "cloudsmith":
         return None
-    if branch == "main":
-        if bool(re.search("boot_partition", url_template)):
-            url = url_template.format(ip, branch, "", "")
-            # folder = BUILD_DATE/PROJECT_FOLDER
-            folder = (
-                get_newest_folder(listFD(url[:-1])) + "/boot_partition/" + str(folder)
-            )
-            return url_template.format(ip, branch, folder, filename)
-        elif bool(re.search("hdl", url_template)):
-            url = url_template.format(ip, addl, "", "")
-            folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
-            return url_template.format(ip, addl, folder, filename)
-        else:
-            url = url_template.format(ip, "", "")
-            # folder = BUILD_DATE/PROJECT_FOLDER
-            folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
-            return url_template.format(ip, folder, filename)
-    else:
-        url = url_template.format(ip, "", "", "")
-        if branch == "release" or branch == "release_latest":
-            if bool(re.search("hdl", url_template)):
-                release_folder = get_latest_release(listFD(url)) + "/" + addl
-            else:
-                release_folder = get_latest_release(listFD(url))
-        else:
+    elif source == "artifactory":
+        if branch == "main":
             if bool(re.search("boot_partition", url_template)):
-                release_folder = branch.lower()
+                url = url_template.format(ip, branch, "", "")
+                # folder = BUILD_DATE/PROJECT_FOLDER
+                folder = (
+                get_newest_folder(listFD(url[:-1])) + "/boot_partition/" + str(folder)
+                )
+                return url_template.format(ip, branch, folder, filename)
             elif bool(re.search("hdl", url_template)):
-                release_folder = "hdl_" + branch.lower() + "/" + addl
+                url = url_template.format(ip, addl, "", "")
+                folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
+                return url_template.format(ip, addl, folder, filename)
             else:
-                release_folder = branch.upper()
-        url = url_template.format(ip, release_folder, "", "")
-        # folder = BUILD_DATE/PROJECT_FOLDER
-        folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
-        return url_template.format(ip, release_folder, folder, filename)
+                url = url_template.format(ip, "", "")
+                # folder = BUILD_DATE/PROJECT_FOLDER
+                folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
+                return url_template.format(ip, folder, filename)
+        else:
+            url = url_template.format(ip, "", "", "")
+            if branch == "release" or branch == "release_latest":
+                if bool(re.search("hdl", url_template)):
+                    release_folder = get_latest_release(listFD(url)) + "/" + addl
+                else:
+                    release_folder = get_latest_release(listFD(url))
+            else:
+                if bool(re.search("boot_partition", url_template)):
+                    release_folder = branch.lower()
+                elif bool(re.search("hdl", url_template)):
+                    release_folder = "hdl_" + branch.lower() + "/" + addl
+                else:
+                    release_folder = branch.upper()
+            url = url_template.format(ip, release_folder, "", "")
+            # folder = BUILD_DATE/PROJECT_FOLDER
+            folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
+            return url_template.format(ip, release_folder, folder, filename)
 
 
 def list_files_in_remote_folder(url, source = "artifactory"):
     if source == "cloudsmith":
         return None
-    """List files in remote artifactory folder"""
-    path = ArtifactoryPath(url)
-    return path.listdir()
+    elif source == "artifactory":
+        """List files in remote artifactory folder"""
+        path = ArtifactoryPath(url)
+        return path.listdir()
 
 
 def get_artifact_paths(toolbox, branch, build, ext, root="dev", source = "artifactory"):
     if source == "cloudsmith":
         # cloudsmith does not support directory listing
         return None
-    log.info(f"Getting {ext} files from {branch} build {build} in {toolbox}")
-    path = ArtifactoryPath(
-        f"https://artifactory.analog.com/artifactory/sdg-generic-development/{toolbox}/{root}/{branch}/{build}"
-    )
-    filename_urls = []
-    for path in path.iterdir():
-        if path.is_file():
-            if path.name.endswith(ext):
-                filename_urls.append(path)
-    filenames = [path.name for path in filename_urls]
-    log.info(f"Found {len(filenames)} {ext} files: {filenames}")
-    return filename_urls
+    elif source == "artifactory":
+        log.info(f"Getting {ext} files from {branch} build {build} in {toolbox}")
+        path = ArtifactoryPath(
+            f"https://artifactory.analog.com/artifactory/sdg-generic-development/{toolbox}/{root}/{branch}/{build}"
+        )
+        filename_urls = []
+        for path in path.iterdir():
+            if path.is_file():
+                if path.name.endswith(ext):
+                    filename_urls.append(path)
+        filenames = [path.name for path in filename_urls]
+        log.info(f"Found {len(filenames)} {ext} files: {filenames}")
+        return filename_urls
 
 
 def filter_boards(paths, fmc, fpga):
@@ -232,12 +261,13 @@ def download_artifact(path, output_folder, source = "artifactory"):
     if source == "cloudsmith":
         # cloudsmith does not support directory listing
         return
-    if not os.path.isdir(output_folder):
-        os.mkdir(output_folder)
-    out_filename = os.path.join(output_folder, path.name)
-    log.info(f"Downloading {out_filename} from {str(path)}")
-    with path.open() as fd, open(out_filename, "wb") as out:
-        out.write(fd.read())
+    elif source == "artifactory":
+        if not os.path.isdir(output_folder):
+            os.mkdir(output_folder)
+        out_filename = os.path.join(output_folder, path.name)
+        log.info(f"Downloading {out_filename} from {str(path)}")
+        with path.open() as fd, open(out_filename, "wb") as out:
+            out.write(fd.read())
 
 
 def translate_to_reference_design_name(fmc, fpga):
@@ -315,47 +345,49 @@ def download_matlab_generate_bootbin(
 def sanitize_artifactory_url(url, source = "artifactory"):
     if source == "cloudsmith":
         return None
-    url = re.sub(r"%2F", "/", url)
-    url = re.sub("/ui/repos/tree/Properties/", "/artifactory/", url)
-    # rebase url
-    url = re.sub("/boot_partition/.*$", "", url)
-    return url
+    elif source == "artifactory":
+        url = re.sub(r"%2F", "/", url)
+        url = re.sub("/ui/repos/tree/Properties/", "/artifactory/", url)
+        # rebase url
+        url = re.sub("/boot_partition/.*$", "", url)
+        return url
 
 
 def get_info_txt(url, source = "artifactory"):
     if source == "cloudsmith":
         return None
-    art_path = ArtifactoryPath(sanitize_artifactory_url(url))
-    info_txt_path = None
-    for p in art_path:
-        if "info.txt" in str(p):
-            info_txt_path = p
-            break
-
-    if not info_txt_path:
-        raise Exception("Missing info.txt")
-
-    log.info("Parsing info.txt")
-    build_info = {"built_projects": []}
-    with info_txt_path.open() as fd:
-        with open("info.txt", "wb") as out:
-            content = fd.read()
-            out.write(content)
-            info_txt = content.decode("utf-8").split("\n")
-            for line in info_txt:
-                match = re.match(r"[\s-]*(.+):(.+)", line)
-                if match:
-                    build_info.update({match.group(1).strip(): match.group(2).strip()})
-                else:
-                    match = re.match(r"\s+-\s([-\w]+)", line)
+    elif source == "artifactory":
+        art_path = ArtifactoryPath(sanitize_artifactory_url(url))
+        info_txt_path = None
+        for p in art_path:
+            if "info.txt" in str(p):
+                info_txt_path = p
+                break
+            
+        if not info_txt_path:
+            raise Exception("Missing info.txt")
+    
+        log.info("Parsing info.txt")
+        build_info = {"built_projects": []}
+        with info_txt_path.open() as fd:
+            with open("info.txt", "wb") as out:
+                content = fd.read()
+                out.write(content)
+                info_txt = content.decode("utf-8").split("\n")
+                for line in info_txt:
+                    match = re.match(r"[\s-]*(.+):(.+)", line)
                     if match:
-                        build_info["built_projects"].append(match.group(1))
-
-    return build_info
+                        build_info.update({match.group(1).strip(): match.group(2).strip()})
+                    else:
+                        match = re.match(r"\s+-\s([-\w]+)", line)
+                        if match:
+                            build_info["built_projects"].append(match.group(1))
+    
+        return build_info
 
 
 class downloader(utils):
-    def __init__(self, http_server_ip=None, yamlfilename=None, board_name=None, service_user=None, cloudsmith_token=None):
+    def __init__(self, http_server_ip=None, yamlfilename=None, board_name=None, cloudsmith_auth=None):
         self.reference_boot_folder = None
         self.devicetree_subfolder = None
         self.boot_subfolder = None
@@ -370,8 +402,15 @@ class downloader(utils):
         self.modules = None
         self.no_os_project = None
         self.platform = None
-        self.service_user = service_user
-        self.cloudsmith_token = cloudsmith_token
+        self.username = None
+        self.cloudsmith_token = None
+
+        if cloudsmith_auth:
+            try:
+                self.username, self.cloudsmith_token = cloudsmith_auth.split(":", 1)
+            except Exception:
+                raise Exception("Cloudsmith authentication format error, must be user:token")
+
         # update from config
         self.update_defaults_from_yaml(
             yamlfilename, __class__.__name__, board_name=board_name
@@ -423,27 +462,7 @@ class downloader(utils):
                 os.mkdir(dest)
             filename = os.path.join(dest, ver)
         self.download(url, filename)
-
-    def _get_newest_cloudsmith_package (self, all_packages, branch, filename):
-        date_pkgs = []
-        general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
-        for pkg in all_packages:
-            pkg_version = pkg.get("version","")
-            version_part = pkg_version.split("/")
-            board_in_version = version_part[-1] if len(version_part) >= 3 else ""
-            board_match = (
-                board_in_version == self.board_name or (filename in ["uImage", "Image", "zImage"] and board_in_version in general_image_boards)
-            )
-            if pkg.get("filename") == filename and pkg_version.startswith(branch + "/") and board_match:
-                date_part = pkg_version.split("/")[1].split("/")[0]
-                if re.match(r"\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}", date_part):
-                    date_pkgs.append((date_part, pkg))
-        if not date_pkgs:
-            return None
-        date_pkgs.sort(key=lambda x: datetime.strptime(x[0], "%Y_%m_%d-%H_%M_%S"), reverse=True)
-        return date_pkgs[0][1]  # newest package
     
-        
     def _get_file(
         self,
         filename,
@@ -531,13 +550,11 @@ class downloader(utils):
         kernel,
         kernel_root,
         dt,
-        cloudsmith_token=None,
         url_template=None,
-        service_user=None,
     ):
         if source == "cloudsmith":
             log.info("Getting standard boot files (Cloudsmith)")
-            api_key = cloudsmith_token
+            api_key = self.cloudsmith_token
             if not api_key:
                 log.error("Cloudsmith API key missing. Set CLOUDSMITH_API_KEY environment variable.")
                 raise Exception("Cloudsmith API key missing.")
@@ -592,7 +609,7 @@ class downloader(utils):
                         out_path = os.path.join(dest, filename)
                         log.info(f"Downloading {filename} from {cdn_url} ...")
                         try:
-                            self.download(cdn_url, out_path, service_user=service_user, cloudsmith_token=cloudsmith_token)
+                            self.download(cdn_url, out_path)
                         except Exception as e:
                             log.error(f"Download failed: {e}")
                         if sha256:
@@ -607,7 +624,7 @@ class downloader(utils):
                         raise Exception(f"No package found for {filename} with version {branch} and board {self.board_name}")
                 else:
                     log.warning(f"No direct match found for {filename} in branch {branch}. Attempting to find newest dated version.")
-                    newest_pkg = self._get_newest_cloudsmith_package(all_packages, branch, filename)
+                    newest_pkg = get_newest_folder(all_packages, source="cloudsmith", branch=branch, filename=filename, board_name=self.board_name)
                     if newest_pkg: 
                         pkg_version = newest_pkg.get("version")
                         log.info(f"Matched filename: {filename}, newest package version: {pkg_version}")
@@ -619,7 +636,7 @@ class downloader(utils):
                         out_path = os.path.join(dest, filename)
                         log.info(f"Downloading {filename} from {cdn_url} ...")
                         try:
-                            self.download(cdn_url, out_path, service_user=service_user, cloudsmith_token=cloudsmith_token)
+                            self.download(cdn_url, out_path, username=self.username, cloudsmith_token=self.cloudsmith_token)
                         except Exception as e:
                             log.error(f"Download failed: {e}")
                             raise
@@ -960,8 +977,6 @@ class downloader(utils):
         microblaze=False,
         rpi=False,
         url_template=None,
-        service_user=None,
-        cloudsmith_token=None,
     ):
         if not kernel:
             kernel = False
@@ -1054,9 +1069,7 @@ class downloader(utils):
                         kernel,
                         kernel_root,
                         dt,
-                        cloudsmith_token=self.cloudsmith_token,
                         url_template=url_template,
-                        service_user=self.service_user
                     )
                 elif folder == "hdl_linux":
                     self._get_files_hdl(
@@ -1087,8 +1100,6 @@ class downloader(utils):
         microblaze=None,
         rpi=None,
         url_template=None,
-        service_user=None,
-        cloudsmith_token=None,
     ):
         """download_boot_files Download bootfiles for target design.
         This method can download or move files from different locations
@@ -1108,6 +1119,7 @@ class downloader(utils):
         Returns:
             A folder with name outs is created with the downloaded boot files
         """
+
         path = pathlib.Path(__file__).parent.absolute()
         res = os.path.join(path, "resources", "board_table.yaml")
         with open(res) as f:
@@ -1213,15 +1225,15 @@ class downloader(utils):
         session.mount("https://", adapter)
         return session
 
-    def download(self, url, fname, service_user=None, cloudsmith_token=None):
+    def download(self, url, fname, username=None, cloudsmith_token=None):
         #Cloudsmith path
         if "cloudsmith.io" in url:
-            #service user and cloudsmith token are obtain from nebula cli using --service-user and --cloudsmith-token
-            service_user = self.service_user
+            #get credentials such as username and token hard coded need to pass in the ci or env. Ideally we will use the service account for this
+            username = self.username
             cloudsmith_token = self.cloudsmith_token
-            if not service_user or not cloudsmith_token:
+            if not username or not cloudsmith_token:
                 raise Exception("Cloudsmith credentials missing, make sure service user and token are provided")
-            resp = self.retry_session().get(url, stream=True, auth=(service_user, cloudsmith_token))
+            resp = self.retry_session().get(url, stream=True, auth=(username, cloudsmith_token))
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
             sha256_hash = hashlib.sha256()

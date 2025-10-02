@@ -414,8 +414,7 @@ def download_sdcard(c, release="2019_R1"):
                     rpi (rpi files), firmware .
                     Default: boot""",
         "url_template": "Custom URL template for Artifactory sources",
-        "service_user": "Cloudsmith service account slug-name",
-        "cloudsmith_token": "Cloudsmith service account API token",
+        "cloudsmith_auth": "cloudsmith authentication format: username:token",
     },
 )
 def download_boot_files(
@@ -427,11 +426,11 @@ def download_boot_files(
     board_name=None,
     filetype="boot_partition",
     url_template=None,
-    service_user=None,
-    cloudsmith_token=None,
+    cloudsmith_auth=None,
 ):
+        
     """Download bootfiles for a specific development system"""
-    d = nebula.downloader(yamlfilename=yamlfilename, board_name=board_name, service_user=service_user, cloudsmith_token=cloudsmith_token)
+    d = nebula.downloader(yamlfilename=yamlfilename, board_name=board_name, cloudsmith_auth=cloudsmith_auth)
     try:
         file = {
             "firmware": None,
@@ -456,9 +455,7 @@ def download_boot_files(
         noos=file["noos"],
         microblaze=file["microblaze"],
         rpi=file["rpi"],
-        url_template=url_template,
-        service_user=service_user,
-        cloudsmith_token=cloudsmith_token
+        url_template=url_template, 
     )
 
 
