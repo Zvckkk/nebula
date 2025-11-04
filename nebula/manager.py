@@ -33,6 +33,7 @@ class manager:
         board_name=None,
         vivado_version=None,
         extras=None,
+        microblaze=False
     ):
         # Check if config info exists in yaml
         self.configfilename = configfilename
@@ -104,7 +105,7 @@ class manager:
             configfilename = None
         else:
             configfilename = self.configfilename
-        self.net = network(yamlfilename=configfilename, board_name=board_name)
+        self.net = network(yamlfilename=configfilename, board_name=board_name, microblaze=microblaze)
         log.info("Networking initialized")
 
         self.reference_boot_folder = None
@@ -184,9 +185,12 @@ class manager:
         ref = ref + "/" + str(target)
         self.monitor[0].copy_reference(ref, target)
 
-    def network_check(self):
+    def network_check(self,microblaze=False):
         if not self.net.ping_board():
-            ip = self.monitor[0].get_ip_address()
+            if microblaze:
+                ip = self.monitor[0].get_ip_address_microblaze()
+            else:
+                ip = self.monitor[0].get_ip_address()
             if ip and ip != self.net.dutip:
                 log.info("DUT IP changed to: " + str(ip))
                 self.net.dutip = ip
@@ -196,8 +200,12 @@ class manager:
                     self.configfilename, "network-config", "dutip", ip, self.board_name
                 )
             if not ip:
-                self.monitor[0].request_ip_dhcp()
-                ip = self.monitor[0].get_ip_address()
+                if microblaze:
+                    self.monitor[0].request_ip_dhcp_microblaze()
+                    ip = self.monitor[0].get_ip_address_microblaze()
+                else:
+                    self.monitor[0].request_ip_dhcp()
+                    ip = self.monitor[0].get_ip_address()
                 if not ip:
                     self.monitor[0].stop_log()
                     raise ne.NetworkNotFunctionalAfterBootFileUpdate
@@ -444,21 +452,22 @@ class manager:
         over JTAG. Then over UART boot
         """
         self.monitor[0]._read_until_stop()  # Flush
-        self.monitor[0].start_log(logappend=True)
+        
 
         log.info("Booting microblaze via JTAG")
         self._check_files_exist(system_top_bit_path, strip_path)
         self.jtag.microblaze_boot_linux(system_top_bit_path, strip_path)
-        time.sleep(30)
+        time.sleep(15)
         self.monitor[0].stop_log()
         self.monitor[0]._wait_for_boot_complete_microblaze()
 
+        self.monitor[0].start_log(logappend=True)
         ip = self.monitor[0].get_ip_address_microblaze()
         log.info("ip got:" + str(ip))
         if not ip:
             self.monitor[0].request_ip_dhcp_microblaze()
             ip = self.monitor[0].get_ip_address_microblaze()
-        self.network_check()
+        self.network_check(microblaze = True)
         self.monitor[0].stop_log()
 
     @_release_thread_lock  # type: ignore

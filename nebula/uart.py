@@ -617,7 +617,6 @@ class uart(utils):
         mt = max_time or self.max_read_time
         for _ in range(mt):
             data = self._read_until_stop()
-            log.info("Read data: " + str(data))
             if isinstance(data, list):
                 for d in data:
                     for done_string in done_string_list:
@@ -673,9 +672,6 @@ class uart(utils):
     def _wait_for_boot_complete_microblaze(self, max_time=10, prompt="#"):
         """Wait for MicroBlaze to boot by waiting for prompt, spamming ENTER if needed."""
 
-        # Flush UART buffer before starting
-        self._read_until_stop()
-    
         # Spam ENTER until "Welcome to Buildroot" is found or timeout
         for _ in range(max_time):
             self._write_data("\n")  # Spam ENTER

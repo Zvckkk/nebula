@@ -916,7 +916,7 @@ def update_boot_files_manager(
     microblaze=False,
 ):
     """Update boot files through u-boot menu (Assuming board is running)"""
-    m = nebula.manager(configfilename=yamlfilename, board_name=board_name)
+    m = nebula.manager(configfilename=yamlfilename, board_name=board_name, microblaze=microblaze)
 
     if not folder:
         m.board_reboot_auto(
