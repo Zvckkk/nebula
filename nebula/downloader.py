@@ -772,7 +772,7 @@ class downloader(utils):
                 )
             else:
                 url_template = "https://{}/artifactory/sdg-generic-development/boot_partition/{}/{}/{}"
-
+                
             if microblaze:
                 design_source_root = f"microblaze_images/{design_name}"
                 print(f"DEBUG: MicroBlaze design_source_root: {design_source_root}")
@@ -1195,20 +1195,23 @@ class downloader(utils):
                 )
 
             if microblaze:
-                hdl_branch = "master" if branch == "main" else branch
+                #hdl_branch = "master" if branch == "main" else branch
                 #self._get_files_hdl(
                 #    hdl_folder, source, source_root, hdl_branch, hdl_output=True
                 #)
-                self._get_files_linux(
-                    design_name,
+                self._get_files_boot_partition(
+                    reference_boot_folder,
+                    devicetree_subfolder,
+                    boot_subfolder,
                     source,
                     source_root,
                     branch,
                     kernel,
                     kernel_root,
                     dt,
-                    arch,
+                    design_name,
                     microblaze,
+                    url_template,
                 )
 
             if rpi:
