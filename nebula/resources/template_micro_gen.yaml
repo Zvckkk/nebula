@@ -213,6 +213,12 @@ jtag-config:
     optional: True
     netbox_field: devices.console_ports.JTAG.label
   field_4:
+    name: jtag_board_target_name
+    default: xc7vx485t
+    help: "Name use to identify jtag target\n. This will be used for filtering jtag target.\n Can use wildcards e.x *"
+    optional: False
+    netbox_field: devices.custom_fields.jtag_board_target_name
+  field_5:
     name: jtag_cpu_target_name
     default: MicroBlaze*#0
     help: "Name use to identify jtag target\n. This will be used for filtering jtag target.\n Can use wildcards e.x *"
