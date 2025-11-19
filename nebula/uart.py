@@ -72,7 +72,7 @@ class uart(utils):
         self.dhcp = dhcp
         self.max_read_time = period
         self.fds_to_skip = ["Digilent"]
-        self.uboot_done_string = ["zynq-uboot>", "Zynq>", "ZynqMP>"]
+        self.uboot_done_string = ["zynq-uboot>", "Zynq>", "ZynqMP>", "MicroBlaze-uboot>"]
         self.update_defaults_from_yaml(
             yamlfilename, __class__.__name__, board_name=board_name
         )
@@ -469,6 +469,7 @@ class uart(utils):
         self._write_data(f"udhcpc {nic}; sleep 5")
         address = self.get_ip_address_microblaze()
         log.debug(f"Got IP address: {address}")
+        return address
 
     def get_ip_address_microblaze(self):
         """Read IP address of DUT using ifconfig from UART for MicroBlaze"""
@@ -665,6 +666,20 @@ class uart(utils):
         if restart:
             self.start_log(logappend=True)
         return out
+    
+    def _wait_for_boot_complete_microblaze(self,done_string="Welcome to Buildroot"):
+        """Wait for Microblaze to boot by waiting for Welcome Message"""
+        restart = False
+        if self.listen_thread_run:
+            restart = True
+            self.stop_log()
+        out = self._read_until_done(done_string=done_string, max_time=30)
+        login_success = False
+        if out:
+            login_success = self._check_for_login()
+        if restart:
+            self.start_log(logappend=True)
+        return out and login_success
 
     def _enter_uboot_menu_from_power_cycle(self):
         log.info("Spamming ENTER to get UART console")
@@ -689,6 +704,32 @@ class uart(utils):
         if restart:
             self.start_log(logappend=True)
         return False
+    
+    def _enter_microblaze_prompt_from_power_cycle(self, prompt="#", max_retry=30):
+        log.info("Spamming Enter to get UART console")
+        log.info("Finding {} for max retry {}".format(prompt, max_retry))
+
+        if self.listen_thread_run:
+            restart = True
+            self.stop_log()
+        else:
+            restart = False
+        for _ in range(max_retry):
+            self._write_data("\r\n")
+            data = self._read_for_time(2)
+            log.info("Found data {}".format(data))
+            if self._check_for_string_console(data, prompt):
+                log.info("Microblaze prompt reached")
+                if restart:
+                    self.start_log(logappend=True)
+                return True
+            time.sleep(0.1)
+        log.info("Microblaze prompt not reached")
+        if restart:
+            self.start_log(logappend=True)
+        return False
+
+
 
     def _enter_linux_prompt_from_power_cycle(self, prompt="root@analog", max_retry=30):
         log.info("Spamming ENTER to get UART console")

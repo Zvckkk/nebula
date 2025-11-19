@@ -17,8 +17,11 @@ kcu105_adrv9371x:
         - axi-ad9371-tx-hpc
         - axi-ad9371-rx-hpc
   jtag-config:
+    - vivado_version: 2021.1
     - jtag_cable_id: 210308AE6A92
+    - jtag_board_target_name: xcku040
     - jtag_cpu_target_name: MicroBlaze*#0
+    - jtag_connect_retries: 3
   microblaze-config:
     - fpga_bitstream: system_top.bit
     - elf_image: simpleImage.strip
@@ -38,7 +41,7 @@ kcu105_adrv9371x:
   uart-config:
     - address: /dev/serial/by-path/pci-0000:00:14.0-usb-0:6.2:1.1-port0
     - baudrate: "115200"
-    - logfilename: kcu105_adrv9371x_iio.log
+    - logfilename: kcu105_adrv9371x.log
 vc707_fmcomms2-3:
   board-config:
     - board-name: vc707_fmcomms2-3
@@ -55,8 +58,10 @@ vc707_fmcomms2-3:
         - cf-ad9361-dds-core-lpc
         - cf-ad9361-lpc
   jtag-config:
+    - vivado_version: 2021.2
     - jtag_cable_id: 210203A25426A
     - jtag_cpu_target_name: MicroBlaze*#0
+    - jtag_connect_retries: "3"
   microblaze-config:
     - fpga_bitstream: system_top.bit
     - elf_image: simpleImage.strip
