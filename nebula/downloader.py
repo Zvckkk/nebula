@@ -160,6 +160,12 @@ def gen_url(ip, branch, folder, filename, addl, url_template, source="artifactor
     if source == "cloudsmith":
         return None
     elif source == "artifactory":
+        if branch == "main" and "boot_partition" in url_template and "microblaze_images" in str(folder):
+            url = url_template.format(ip, branch, "", "")
+            folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
+            print(f"debug: microblaze folder constructed: {folder}")
+            return url_template.format(ip, branch, folder, filename)
+        
         if branch == "main":
             if bool(re.search("boot_partition", url_template)):
                 url = url_template.format(ip, branch, "", "")
@@ -195,11 +201,7 @@ def gen_url(ip, branch, folder, filename, addl, url_template, source="artifactor
                     release_folder = branch.upper()
             url = url_template.format(ip, release_folder, "", "")
             # folder = BUILD_DATE/PROJECT_FOLDER
-            folder = (
-                    get_newest_folder(listFD(url[:-1])) + "/boot_partition/" + str(folder)
-                )
             if branch == "main" and "boot_partition" in url_template:
-
                 if "microblaze_images" in str (folder):
                     folder = get_newest_folder(listFD(url[:-1])) + "/" + str(folder)
                     print(f"debug: microblaze folder constructed: {folder}")
@@ -776,6 +778,7 @@ class downloader(utils):
             if microblaze:
                 design_source_root = f"microblaze_images/{design_name}"
                 print(f"DEBUG: MicroBlaze design_source_root: {design_source_root}")
+                print
 
                 # get simpleImage
                 log.info("Getting simpleimage")
