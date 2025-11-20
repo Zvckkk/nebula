@@ -198,7 +198,7 @@ jtag-config:
     name: vivado_version
     default: 2021.1
     help: "Version of vivado to use"
-    optional: True
+    optional: False
     netbox_field: devices.config_context.vivado_version
   field_2:
     name: custom_vivado_path
@@ -210,7 +210,7 @@ jtag-config:
     name: jtag_cable_id
     default: 210299A567FE
     help: "Substring of JTAG cable ID. Run 'jtag target' through xsdb to get it.\n Just really need code not full name."
-    optional: True
+    optional: False
     netbox_field: devices.console_ports.JTAG.label
   field_4:
     name: jtag_board_target_name
@@ -224,6 +224,11 @@ jtag-config:
     help: "Name use to identify jtag target\n. This will be used for filtering jtag target.\n Can use wildcards e.x *"
     optional: True
     netbox_field: devices.custom_fields.jtag_cpu_target_name
+  field_6:
+    name: jtag_connect_retries
+    default: 3
+    help: "Number of retries for JTAG connection"
+    optional: False
 microblaze-config:
   field_1:
     name: fpga_bitstream
