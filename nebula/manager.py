@@ -965,3 +965,4 @@ class manager:
                 self.net.verify_checksum(
                     file_path=os.path.join("/boot", fname), reference=hash
                 )
+    

@@ -32,24 +32,25 @@ def test_microblaze_downloader():
 
 def test_microblaze_boot():
     # Use files from outs folder
-    bitstream = os.path.join(out_folder, "system_top.bit")
-    strip = os.path.join(out_folder, "simpleImage.strip")
+    bitstream = os.path.join("/root/wk_ace/nebula/outs/", "system_top.bit")
+    strip = os.path.join("/root/wk_ace/nebula/outs/", "simpleImage.strip")
     assert os.path.isfile(bitstream), "Bitstream file not found"
     assert os.path.isfile(strip), "Strip file not found"
 
     import nebula
 
     manager = nebula.manager(configfilename=cfg, board_name="kc705_ad9467_fmc")
-    manager.monitor[0].logfilename = os.path.join(log_folder, "kc705_ad9467_fmc.log")
-    manager.monitor[0]._read_until_stop()  # Flush
+    manager.monitor[0].logfilename = os.path.join(log_folder, "kc705_ad9467_fmc.log") # Flush
     manager.monitor[0].print_to_console = True
     manager.monitor[0].start_log(logappend=True)
-    manager.monitor[0]._read_until_stop()  # Flush
+
 
     # Boot the board
     manager.jtag.microblaze_boot_linux(bitstream, strip)
     time.sleep(60)
-    manager.monitor[0]._check_for_login()
+    manager.monitor[0].stop_log()
+    manager.monitor[0]._wait_for_boot_complete_microblaze()
     time.sleep(5)
+    manager.monitor[0].stop_log()
     manager.monitor[0].request_ip_dhcp_microblaze()
     manager.monitor[0].stop_log()
