@@ -41,16 +41,11 @@ def test_microblaze_boot():
 
     manager = nebula.manager(configfilename=cfg, board_name="kc705_ad9467_fmc")
     manager.monitor[0].logfilename = os.path.join(log_folder, "kc705_ad9467_fmc.log") # Flush
-    manager.monitor[0].print_to_console = True
-    manager.monitor[0].start_log(logappend=True)
 
-
+    manager.board_reboot_auto_folder(
+        out_folder,
+        microblaze=True
+    )
     # Boot the board
-    manager.jtag.microblaze_boot_linux(bitstream, strip)
-    time.sleep(60)
-    manager.monitor[0].stop_log()
-    manager.monitor[0]._wait_for_boot_complete_microblaze()
-    time.sleep(5)
-    manager.monitor[0].stop_log()
-    manager.monitor[0].request_ip_dhcp_microblaze()
-    manager.monitor[0].stop_log()
+    ip = manager.monitor[0].get_ip_address_microblaze()
+    assert ip is not None, "MicroBlaze board did not obtain an IP address"

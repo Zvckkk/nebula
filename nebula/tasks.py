@@ -900,6 +900,7 @@ def board_diagnostics_manager(
         "yamlfilename": "Path to yaml config file. Default: /etc/default/nebula",
         "board_name": "Name of DUT design (Ex: zynq-zc706-adv7511-fmcdaq2). Require for multi-device config files",
         "sdcard": "Get boot files from the sdcard",
+        "microblaze" : "set this flag for Microblaze boards"
     },
 )
 def update_boot_files_manager(
@@ -912,6 +913,7 @@ def update_boot_files_manager(
     yamlfilename="/etc/default/nebula",
     board_name=None,
     sdcard=False,
+    microblaze=False,
 ):
     """Update boot files through u-boot menu (Assuming board is running)"""
     m = nebula.manager(configfilename=yamlfilename, board_name=board_name)
@@ -925,7 +927,7 @@ def update_boot_files_manager(
             sdcard=sdcard,
         )
     else:
-        m.board_reboot_auto_folder(folder=folder, sdcard=sdcard, design_name=board_name)
+        m.board_reboot_auto_folder(folder=folder, sdcard=sdcard, design_name=board_name, microblaze=microblaze)
 
 
 @task(
