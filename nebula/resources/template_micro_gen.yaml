@@ -45,7 +45,7 @@ board-config:
 network-config:
   field_1:
     name: dutip
-    default: 192.168.10.2
+    default:
     help: "IP address of development board"
     optional: False
     netbox_field: devices.interfaces.mgmt.ip.address

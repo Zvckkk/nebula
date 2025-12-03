@@ -1,20 +1,24 @@
 board-config:
-- board-name: kc705_ad9467_fmc
-- carrier: KC705
-- daughter: AD9467
+- board-name: kcu105_adrv9371x
+- carrier: KCU105
+- daughter: ADRV9371
 - monitoring-interface: uart
 - allow-jtag: True
 downloader-config:
-- reference_boot_folder: kc705_ad9467_fmc
+- reference_boot_folder: kcu105_adrv9371x
 - platform: Xilinx
 driver-config:
 - iio_device_names:
-  - ad9517-4
-  - cf-ad9467-core-lpc
+  - ad7291
+  - ad9528-1
+  - ad9371-phy
+  - axi-ad9371-rx-obs-hpc
+  - axi-ad9371-tx-hpc
+  - axi-ad9371-rx-hpc
 jtag-config:
 - vivado_version: 2021.1
-- jtag_cable_id: 210203859085A
-- jtag_board_target_name: xc7k325t
+- jtag_cable_id: 210308AE6A92
+- jtag_board_target_name: xcku040
 - jtag_cpu_target_name: MicroBlaze*#0
 - jtag_connect_retries: 3
 microblaze-config:
@@ -26,14 +30,14 @@ netbox-config:
 - netbox_base_url: netbox
 - netbox_api_token: 4d6a33918d555e6d1e5539b9e3329d3ccb1bc6a5
 network-config:
-- dutip: 192.168.10.238
+- dutip: 192.168.10.237
 pdu-config:
 - pdu_type: cyberpower
 - pduip: 192.168.10.25
-- outlet: '4'
+- outlet: '3'
 - username: cyber
 - password: cyber1
 uart-config:
-- address: /dev/serial/by-path/pci-0000:00:14.0-usb-0:6.4:1.0-port0
+- address: /dev/serial/by-path/pci-0000:00:14.0-usb-0:6.2:1.1-port0
 - baudrate: '115200'
-- logfilename: kc705_ad9467_fmc_iio.log
+- logfilename: kcu105_adrv9371x_iio.log
