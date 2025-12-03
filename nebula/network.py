@@ -190,6 +190,7 @@ class network(utils):
         log.info("Rebooting board over SSH")
         # Try to reboot board with SSH if possible
         retries = 3
+        ex = None
         for t in range(retries):
             conn = None
             try:
@@ -204,7 +205,8 @@ class network(utils):
                     # Use PDU
                     raise Exception("PDU reset not implemented yet")
 
-            except Exception as ex:
+            except Exception as inner_ex:
+                ex = inner_ex
                 log.warning("Exception raised: " + str(ex))
                 time.sleep(3)
                 if t >= (retries - 1):
@@ -226,6 +228,7 @@ class network(utils):
     ):
         result = None
         filename = None
+        ex = None
         for t in range(retries):
             log.info(
                 "ssh command:" + command + " to " + self.dutusername + "@" + self.dutip
@@ -262,7 +265,8 @@ class network(utils):
                         with open(f"{self.board_name}_err_{filename}.log", "w") as f:
                             f.write(result.stderr)
                 break
-            except Exception as ex:
+            except Exception as inner_ex:
+                ex = inner_ex
                 log.warning("Exception raised: " + str(ex))
             finally:
                 # Always close the connection to prevent state issues
@@ -280,6 +284,7 @@ class network(utils):
 
     def copy_file_to_remote(self, src, dest):
         retries = 3
+        ex = None
         log.info("Copying file to remote: " + src)
         for t in range(retries):
             conn = None
@@ -287,7 +292,8 @@ class network(utils):
                 conn = self._get_connection()
                 conn.put(src, remote=dest)
                 break
-            except Exception as ex:
+            except Exception as inner_ex:
+                ex = inner_ex
                 log.warning("Exception raised: " + str(ex))
                 time.sleep(3)
                 if t >= (retries - 1):
