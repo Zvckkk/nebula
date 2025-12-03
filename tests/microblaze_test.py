@@ -16,9 +16,9 @@ def test_microblaze_downloader():
     if os.path.isdir(out_folder):
         shutil.rmtree(out_folder)
 
-    d = downloader(yamlfilename=cfg, board_name="kc705_ad9467_fmc")
+    d = downloader(yamlfilename=cfg, board_name="kcu105_adrv9371x")
     d.download_boot_files(
-        "kc705_ad9467_fmc",
+        "kcu105_adrv9371x",
         source="artifactory",
         source_root="artifactory.analog.com",
         branch="main",
@@ -39,8 +39,8 @@ def test_microblaze_boot():
 
     import nebula
 
-    manager = nebula.manager(configfilename=cfg, board_name="kc705_ad9467_fmc")
-    manager.monitor[0].logfilename = os.path.join(log_folder, "kc705_ad9467_fmc.log") # Flush
+    manager = nebula.manager(configfilename=cfg, board_name="kcu105_adrv9371x", microblaze=True)
+    manager.monitor[0].logfilename = os.path.join(log_folder, "kcu105_adrv9371x.log") # Flush
 
     manager.board_reboot_auto_folder(
         out_folder,

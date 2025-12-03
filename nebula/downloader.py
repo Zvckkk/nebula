@@ -858,12 +858,20 @@ class downloader(utils):
 
         if source == "artifactory":
             # check if info_txt is present
-            try:
-                build_info = get_info_txt(url_template)
-            except Exception as e:
-                log.warn(e)
-                build_info = None
-            get_gitsha(self.url, daily=False, build_info=build_info)
+            if microblaze:
+                #skip get_gitsha for microblaze
+                try: 
+                    build_info = get_info_txt(url_template)
+                except Exception as e:
+                    log.warn(e)
+                    build_info = None
+            else:
+                try:
+                    build_info = get_info_txt(url_template)
+                except Exception as e:
+                    log.warn(e)
+                    build_info = None
+                get_gitsha(self.url, daily=False, build_info=build_info)
 
     def _get_files_hdl(self, hdl_folder, source, source_root, branch, hdl_output=False):
         design_source_root = hdl_folder
