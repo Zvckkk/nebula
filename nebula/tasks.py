@@ -762,7 +762,7 @@ def gen_config_netbox(
     netbox_baseurl=None,
     jenkins_agent=None,
     board_name=None,
-    include_variants=False,
+    include_variants=True,
     include_children=True,
     devices_status="active",
     devices_role="fpga-dut",
@@ -1272,7 +1272,7 @@ uart.add_task(set_local_nic_ip_from_usbdev)
         "board_name": "Name of DUT design (Ex: zynq-zc706-adv7511-fmcdaq2). Require for multi-device config files",
     }
 )
-def check_dmesg(c, ip, user="root", password="analog", board_name=None):
+def check_dmesg(c, ip, user="root", password="analog", board_name=None,):
     """Download and parse remote board's dmesg log
     Three log files will be produced:
         dmesg.log - Full dmesg

@@ -13,7 +13,7 @@ from fabric import Connection
 from paramiko import AutoAddPolicy
 import paramiko.packet
 import paramiko.common
-import yaml
+import logging
 
 import nebula.errors as ne
 import nebula.helper as helper
@@ -36,14 +36,7 @@ def _patched_read_message(self):
             return paramiko.common.MSG_IGNORE, Message()
         raise
 
-def apply_monkey_patch_for_microblaze(microblaze):
-    log.info("checking if monkey patch needed for microblaze: " + str(microblaze))
-    if microblaze:
-        log.info("Applying Paramiko monkey patch for Microblaze dropbear compatibility")
-        paramiko.packet.Packetizer.read_message = _patched_read_message
-    else:
-        log.info("Restoring original Paramiko read_message method")
-        paramiko.packet.Packetizer.read_message = _original_read_message
+paramiko.packet.Packetizer.read_message = _patched_read_message
 
 log = logging.getLogger(__name__)
 
@@ -59,10 +52,7 @@ class network(utils):
         nicip=None,
         yamlfilename=None,
         board_name=None,
-        microblaze=False,
     ):
-        # Apply the monkey patch conditionally
-        apply_monkey_patch_for_microblaze(microblaze)
 
         props = ["dutip", "dutusername", "dutpassword", "dhcp", "nic", "nicip"]
         for prop in props:
@@ -84,6 +74,17 @@ class network(utils):
         self.board_name = board_name
         self.pty = True  # Use PTY mode to avoid MAC mismatch errors with dropbear
 
+        self.microblaze_enable = any(
+            keyword in self.board_name.lower() for keyword in ["kcu", "vc", "kc"]
+        )
+        # Apply monkey patch for MicroBlaze boards if enabled
+        if self.microblaze_enable:
+            log.info("Applying Paramiko monkey patch for MicroBlaze dropbear compatibility")
+            paramiko.packet.Packetizer.read_message = _patched_read_message
+        else:
+            log.info("Using standard Paramiko read_message method")
+            paramiko.packet.Packetizer.read_message = _original_read_message
+
     def _get_connection(self):
         """Create a fabric Connection with host key checking disabled"""
         conn = Connection(
@@ -97,16 +98,20 @@ class network(utils):
             },
         )
         # Disable SSH host key checking by setting policy to auto-add
-        conn.open()
-        if conn.client:
-            conn.client.set_missing_host_key_policy(AutoAddPolicy())
-            # Set transport options for better compatibility with dropbear
-            if conn.client.get_transport():
-                transport = conn.client.get_transport()
-                transport.window_size = 2147483647  # Maximum window size
-                transport.max_packet_size = 32768  # Smaller packet size for compatibility
-                transport.packetizer.REKEY_BYTES = pow(2, 30)  # Delay rekeying
-                transport.packetizer.REKEY_PACKETS = pow(2, 30)
+        try:
+            conn.open()
+            if conn.client:
+                conn.client.set_missing_host_key_policy(AutoAddPolicy())
+                # Set transport options for better compatibility with dropbear
+                if conn.client.get_transport():
+                    transport = conn.client.get_transport()
+                    transport.window_size = 2147483647  # Maximum window size
+                    transport.max_packet_size = 32768  # Smaller packet size for compatibility
+                    transport.packetizer.REKEY_BYTES = pow(2, 30)  # Delay rekeying
+                    transport.packetizer.REKEY_PACKETS = pow(2, 30)
+        except Exception as e:
+            log.error(f"Failed to establish SSH connection: {e}")
+            raise
         return conn
 
     def ping_board(self, tries=10):
@@ -152,7 +157,8 @@ class network(utils):
                     "uname -a",
                     hide=True,
                     timeout=self.ssh_timeout,
-                    pty=self.pty,  # Use PTY to avoid MAC mismatch errors with dropbear
+                    pty=self.pty,
+                    warn = True,
                     in_stream=False,
                 )
                 log.info("SSH successful")
@@ -243,7 +249,9 @@ class network(utils):
                     pty=self.pty,  # Use PTY to avoid MAC mismatch errors with dropbear
                     in_stream=False,
                 )
+
                 if result.failed:
+                    log.error(f"Command failed: {command}")
                     raise Exception("Failed to run command:", command)
 
                 if print_result_to_file:
@@ -267,19 +275,15 @@ class network(utils):
                 break
             except Exception as inner_ex:
                 ex = inner_ex
-                log.warning("Exception raised: " + str(ex))
+                log.warning("Exception raised: " + str(ex), exc_info=True)
+                if not ignore_exceptions and t >= (retries - 1):
+                    raise Exception("SSH Failed: " + str(ex))
             finally:
-                # Always close the connection to prevent state issues
                 if conn is not None:
                     try:
                         conn.close()
-                    except:
-                        pass
-                if not ignore_exceptions:
-                    time.sleep(3)
-                    if t >= (retries - 1):
-                        raise Exception("SSH Failed: " + str(ex))
-
+                    except Exception as close_ex:
+                        log.warning("Failed to close connection: " + str(close_ex))
         return result
 
     def copy_file_to_remote(self, src, dest):
@@ -428,7 +432,21 @@ class network(utils):
         tmp_filename_err = "/tmp/" + tmp_filename_root + "_err"
         tmp_filename_war = "/tmp/" + tmp_filename_root + "_warn"
 
-        if self.board_name == "pluto" or self.board_name == "m2k":
+        if self.microblaze_enable:
+            max_retries = 3
+            for attempt in range(max_retries):
+                log.info("dmesg command attempt: " + str(attempt +1))
+                try:
+                    self.run_ssh_command("dmesg > " + tmp_filename)
+                    self._dl_file(tmp_filename)
+                    self.run_ssh_command('dmesg | grep -E "failed|error" > ' + tmp_filename_err)
+                    self._dl_file(tmp_filename_err)
+                    break
+                except Exception as e:
+                    log.warning(f"attempt {attempt +1} failed with exception: {e}")
+                    if attempt == max_retries - 1:
+                        raise e
+        elif self.board_name == "pluto" or self.board_name == "m2k":
             with open(tmp_filename_root, "w") as outfile:
                 outfile.write(self.run_ssh_command("dmesg").stdout)
             with open(tmp_filename_root + "_warn", "w") as outfile:
@@ -448,18 +466,21 @@ class network(utils):
             self._dl_file(tmp_filename_err)
 
         os.rename(tmp_filename_root, "dmesg.log")
-        os.rename(tmp_filename_root + "_warn", "dmesg_warn.log")
         os.rename(tmp_filename_root + "_err", "dmesg_err.log")
-        logging.info("dmesg logs collected")
+        warn_log = []
 
-        # Process
-        with open("dmesg.log", "r") as f:
-            all_log = f.readlines()
-        with open("dmesg_warn.log", "r") as f:
-            warn_log = f.readlines()
+        if not self.microblaze_enable:
+            os.rename(tmp_filename_root + "_warn", "dmesg_warn.log")
+            with open("dmesg_warn.log", "r") as f:
+                warn_log = f.readlines()
+
         with open("dmesg_err.log", "r") as f:
             error_log = f.readlines()
+        with open("dmesg.log", "r") as f:
+            all_log = f.readlines()
+        logging.info("dmesg logs collected")
 
+        #filtering known errors
         path = pathlib.Path(__file__).parent.absolute()
         res = os.path.join(path, "resources", "err_rejects.txt")
         with open(res) as f:
@@ -467,12 +488,10 @@ class network(utils):
         error_rejects_no_ws = [
             s.replace(" ", "").replace("\n", "") for s in error_rejects
         ]
-
         error_log_filetered = []
         for i in error_log:
             msg_log = re.sub(r"^\[[\s\.\d]*\] ", "", i)
             log_no_ws = msg_log.replace(" ", "").replace("\n", "")
-
             if log_no_ws not in error_rejects_no_ws:
                 error_log_filetered.append(i)
 
@@ -484,7 +503,9 @@ class network(utils):
         if len(error_log_filetered) > 0:
             log.info("Errors found in dmesg logs")
 
-        logs = {"log": all_log, "warn": warn_log, "error": error_log_filetered}
+        logs = {"log": all_log, "error": error_log_filetered}
+        if not self.microblaze_enable: #subject for change, need to identify what are the warnings and the errors for microblaze
+            logs.update({"warn": warn_log})
         return len(error_log_filetered) > 0, logs
 
     def run_diagnostics(self):

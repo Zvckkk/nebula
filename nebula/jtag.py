@@ -79,66 +79,6 @@ class jtag(utils):
         # logging.info(output.decode("utf-8"))
         # return output.decode("utf-8")
 
-    #def run_command_realtime(self, command, shell=True):
-    #    """
-    #    Run a shell command and print output in real-time as it's generated.
-    #    
-    #    Args:
-    #        command (str or list): The command to run. Can be a string (if shell=True) 
-    #                            or a list of arguments (if shell=False)
-    #        shell (bool): Whether to run the command through the shell
-    #    
-    #    Returns:
-    #        int: The return code of the command
-    #    """
-    #    if isinstance(command, str) and not shell:
-    #        raise ValueError("If command is a string, shell must be True")
-    #    if isinstance(command, list) and shell:
-    #        raise ValueError("If command is a list, shell must be False")
-    #    
-    #    # command = "bash -c '{}'".format(command) if shell else command
-    #    try:
-    #        # log.info(f"Running command: {command.replace(';', ';\n')}")
-    #        # Start the process
-    #        process = subprocess.Popen(
-    #            command,
-    #            shell=shell,
-    #            stdout=subprocess.PIPE,
-    #            stderr=subprocess.STDOUT,  # Combine stderr with stdout
-    #            universal_newlines=True,   # Handle text mode
-    #            bufsize=1,                 # Line buffered
-    #            executable="/bin/bash"     # Use bash shell
-    #        )
-    #        
-    #        # Read and print output line by line as it comes
-    #        log.info("Reading lines...")
-    #        while True:
-    #            output = process.stdout.readline()
-    #            
-    #            # If output is empty and process has finished, break
-    #            if output == '' and process.poll() is not None:
-    #                log.info("Process finished.")
-    #                break
-    #                
-    #            # Print the line if it's not empty
-    #            if output:
-    #                print(output.strip())
-    #                sys.stdout.flush()  # Force immediate output
-    #        log.info("Done...")
-    #        
-    #        # Wait for the process to complete and get return code
-    #        return_code = process.wait()
-    #        
-    #        return return_code
-            
-    #    except KeyboardInterrupt:
-    #        print("\nProcess interrupted by user")
-    #        process.terminate()
-    #        return -1
-    #    except Exception as e:
-    #        print(f"Error running command: {e}")
-    #        return -1
-
     def run_xsdb(self, cmd):
         if not self.custom_vivado_path:
             vivado = (

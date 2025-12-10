@@ -105,7 +105,7 @@ class manager:
             configfilename = None
         else:
             configfilename = self.configfilename
-        self.net = network(yamlfilename=configfilename, board_name=board_name, microblaze=microblaze)
+        self.net = network(yamlfilename=configfilename, board_name=board_name)
         log.info("Networking initialized")
 
         self.reference_boot_folder = None
