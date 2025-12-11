@@ -416,11 +416,13 @@ class downloader(utils):
             yamlfilename, __class__.__name__, board_name=board_name
         )
 
-    def _download_firmware(self, device, source="github", release=None):
+    def _download_firmware(self, device, source="github", release=None, version=None):
         if "m2k" in device.lower() or "adalm-2000" in device.lower():
             dev = "m2k"
+            fw_filename = "m2k-fw_build.tar.gz"
         elif "pluto" in device.lower():
             dev = "plutosdr"
+            fw_filename = "plutosdr-fw_build.tar.gz"
         else:
             raise Exception("Unknown device " + device)
 
@@ -449,6 +451,7 @@ class downloader(utils):
             if not os.path.isdir(dest):
                 os.mkdir(dest)
             filename = os.path.join(dest, dev + "-fw-" + release + ".zip")
+            self.download(url, filename)
         elif source == "artifactory":
             url_template = "https://artifactory.analog.com/artifactory/sdg-generic-development/m2k_and_pluto/{}-fw/{}/{}"
             url = url_template.format(dev, "", "")
@@ -461,7 +464,26 @@ class downloader(utils):
             if not os.path.isdir(dest):
                 os.mkdir(dest)
             filename = os.path.join(dest, ver)
-        self.download(url, filename)
+            self.download(url, filename)
+        elif source == "cloudsmith":
+            api_key = self.cloudsmith_token
+            username = self.username
+            if not api_key or not username:
+                log.error("Cloudsmith credentials missing. Pass --cloudsmith-auth user:token or set CLOUDSMITH_AUTH.")
+                raise Exception("Cloudsmith credentials missing.")
+
+            # Use the version (date string or 'latest' ex. 27-10-2025_08-52-03) to build URL
+            if version:
+                url = f"https://dl.cloudsmith.io/basic/adi/hdl-test/raw/versions/{version}/{fw_filename}"
+                log.info(f"Downloading {fw_filename} version {version} from Cloudsmith: {url}")
+            else:
+                url = f"https://dl.cloudsmith.io/basic/adi/hdl-test/raw/versions/latest/{fw_filename}"
+                log.info(f"Downloading latest {fw_filename} from Cloudsmith: {url}")
+            dest = "outs"
+            if not os.path.isdir(dest):
+                os.mkdir(dest)
+            filename = os.path.join(dest, fw_filename)
+            self.download(url, filename, username=username, cloudsmith_token=api_key)
     
     def _get_file(
         self,
@@ -977,6 +999,7 @@ class downloader(utils):
         microblaze=False,
         rpi=False,
         url_template=None,
+        version=None,
     ):
         if not kernel:
             kernel = False
@@ -1016,7 +1039,7 @@ class downloader(utils):
                 or "m2k" in details["carrier"].lower()
                 or "adalm-2000" in details["carrier"].lower()
             ), "Firmware downloads only available for pluto and m2k"
-            self._download_firmware(details["carrier"], source, branch)
+            self._download_firmware(details["carrier"], source, branch, version=version)
         else:
 
             if source == "local_fs":  # to fix
@@ -1100,6 +1123,7 @@ class downloader(utils):
         microblaze=None,
         rpi=None,
         url_template=None,
+        version=None,
     ):
         """download_boot_files Download bootfiles for target design.
         This method can download or move files from different locations
@@ -1178,6 +1202,7 @@ class downloader(utils):
             microblaze,
             rpi,
             url_template,
+            version,
         )
 
     def download_sdcard_release(self, release="2019_R1"):

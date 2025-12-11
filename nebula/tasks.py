@@ -415,6 +415,7 @@ def download_sdcard(c, release="2019_R1"):
                     Default: boot""",
         "url_template": "Custom URL template for Artifactory sources",
         "cloudsmith_auth": "cloudsmith authentication format: username:token",
+        "version": "Version string for firmware downloads from Cloudsmith. Can be date string or 'latest'",
     },
 )
 def download_boot_files(
@@ -427,6 +428,7 @@ def download_boot_files(
     filetype="boot_partition",
     url_template=None,
     cloudsmith_auth=None,
+    version=None,
 ):
         
     """Download bootfiles for a specific development system"""
@@ -456,6 +458,7 @@ def download_boot_files(
         microblaze=file["microblaze"],
         rpi=file["rpi"],
         url_template=url_template, 
+        version=version,
     )
 
 
