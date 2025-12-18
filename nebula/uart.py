@@ -460,10 +460,12 @@ class uart(utils):
         """Read MAC Address of enumerated NIC on host from DUT (Pluto/M2K only)"""
         cmd = "cat /www/index.html | grep '00:' | grep -v `cat /sys/class/net/usb0/address` | sed 's/ *<[^>]*> */ /g'"
         return self.get_uart_command_for_linux(cmd, "00")
-    
+
     def request_ip_dhcp_microblaze(self, nic="eth0"):
         self._read_until_stop()  # Flush
-        self._write_data(f"ifconfig {nic} down; ifconfig {nic} up; udhcpc -r {nic}; sleep 5")
+        self._write_data(
+            f"ifconfig {nic} down; ifconfig {nic} up; udhcpc -r {nic}; sleep 5"
+        )
         time.sleep(5)
         self._read_until_stop()  # Flush
         time.sleep(5)
@@ -487,7 +489,7 @@ class uart(utils):
         self._write_data(cmd)
         data = self._read_for_time(period=2)
         log.info("Data read: " + str(data))
-        if restart: 
+        if restart:
             self.start_log(logappend=True)
         for d in data:
             if isinstance(d, list):
@@ -667,7 +669,6 @@ class uart(utils):
         if restart:
             self.start_log(logappend=True)
         return out
-    
 
     def _wait_for_boot_complete_microblaze(self, max_time=10, prompt="#"):
         """Wait for MicroBlaze to boot by waiting for prompt, spamming ENTER if needed."""
@@ -681,13 +682,15 @@ class uart(utils):
             )
             log.info("UART read after ENTER: {}".format(found))
             if found:
-                log.info("---buildroot welcome message found, waiting for login prompt---")
+                log.info(
+                    "---buildroot welcome message found, waiting for login prompt---"
+                )
                 break
             time.sleep(1)
         else:
             log.warning("Buildroot welcome message not found after spamming ENTER")
             return False
-    
+
         # Waiting for login prompt and attempt login
         login_success = False
         for attempt in range(15):
@@ -709,16 +712,16 @@ class uart(utils):
         if not login_success:
             log.warning("Login failed")
             return False
-        
-        #wait for MicroBlaze shell prompt
+
+        # wait for MicroBlaze shell prompt
         isRootLevel = False
         for attempt in range(5):
             self._write_data("\n")
             time.sleep(1)
             lines = self._read_until_stop()
             log.debug("UART lines: {}".format(lines))
-            for l in lines:
-                if prompt in l:
+            for uart_line in lines:
+                if prompt in uart_line:
                     log.info("Microblaze prompt found, boot complete")
                     isRootLevel = True
                     break
@@ -728,7 +731,7 @@ class uart(utils):
         if not isRootLevel:
             log.warning("Microblaze prompt not found")
             return False
-            
+
     def _enter_uboot_menu_from_power_cycle(self):
         log.info("Spamming ENTER to get UART console")
         # stop_at_done = False
@@ -782,7 +785,7 @@ class uart(utils):
         """Load complete system (bitstream, devtree, kernel) during uboot from TFTP"""
 
         restart = False
-        if self.listen_thread_run:  
+        if self.listen_thread_run:
             restart = True
             self.stop_log()
 

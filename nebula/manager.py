@@ -33,7 +33,7 @@ class manager:
         board_name=None,
         vivado_version=None,
         extras=None,
-        microblaze=False
+        microblaze=False,
     ):
         # Check if config info exists in yaml
         self.configfilename = configfilename
@@ -185,7 +185,7 @@ class manager:
         ref = ref + "/" + str(target)
         self.monitor[0].copy_reference(ref, target)
 
-    def network_check(self,microblaze=False):
+    def network_check(self, microblaze=False):
         if not self.net.ping_board():
             if microblaze:
                 ip = self.monitor[0].get_ip_address_microblaze()
@@ -442,17 +442,16 @@ class manager:
             self.network_check()
             self.monitor[0].stop_log()
 
-    @_release_thread_lock
+    @_release_thread_lock  # type: ignore
     def board_boot_microblaze_jtag_uart(
         self,
-        system_top_bit_path, 
+        system_top_bit_path,
         strip_path,
     ):
         """Reset board and load microblaze bitstream
         over JTAG. Then over UART boot
         """
         self.monitor[0]._read_until_stop()  # Flush
-        
 
         log.info("Booting microblaze via JTAG")
         self._check_files_exist(system_top_bit_path, strip_path)
@@ -467,7 +466,7 @@ class manager:
         if not ip:
             self.monitor[0].request_ip_dhcp_microblaze()
             ip = self.monitor[0].get_ip_address_microblaze()
-        self.network_check(microblaze = True)
+        self.network_check(microblaze=True)
         self.monitor[0].stop_log()
 
     @_release_thread_lock  # type: ignore
@@ -783,7 +782,7 @@ class manager:
         for mon in self.monitor:
             mon.stop_log()
 
-    def _find_boot_files(self, folder, microblaze = False):
+    def _find_boot_files(self, folder, microblaze=False):
         if not os.path.isdir(folder):
             raise Exception("Boot files folder not found")
         files = os.listdir(folder)
@@ -855,7 +854,13 @@ class manager:
             )
 
     def board_reboot_auto_folder(
-        self, folder, sdcard=False, design_name=None, recover=False, jtag_mode=False, microblaze=False
+        self,
+        folder,
+        sdcard=False,
+        design_name=None,
+        recover=False,
+        jtag_mode=False,
+        microblaze=False,
     ):
         """Automatically select loading mechanism
         based on current class setup and automatically find boot
@@ -889,7 +894,7 @@ class manager:
                 log.info("Found microblaze boot files:")
                 for file in [bit, strip]:
                     if file:
-                        log.info(file)      
+                        log.info(file)
                 self.board_boot_microblaze_jtag_uart(
                     system_top_bit_path=bit,
                     strip_path=strip,
@@ -1025,4 +1030,3 @@ class manager:
                 self.net.verify_checksum(
                     file_path=os.path.join("/boot", fname), reference=hash
                 )
-    

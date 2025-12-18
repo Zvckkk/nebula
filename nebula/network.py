@@ -9,11 +9,10 @@ import subprocess
 import time
 
 import fabric
+import paramiko.common
+import paramiko.packet
 from fabric import Connection
 from paramiko import AutoAddPolicy
-import paramiko.packet
-import paramiko.common
-import logging
 
 import nebula.errors as ne
 import nebula.helper as helper
@@ -23,6 +22,7 @@ from nebula.common import utils
 # This works around a known bug in older dropbear versions with large data transfers
 _original_read_message = paramiko.packet.Packetizer.read_message
 
+
 def _patched_read_message(self):
     """Patched read_message that skips MAC check on verification failure"""
     try:
@@ -30,11 +30,15 @@ def _patched_read_message(self):
     except paramiko.SSHException as e:
         if "Mismatched MAC" in str(e):
             # Log the error but don't fail - this is a known dropbear bug
-            logging.getLogger(__name__).warning(f"MAC mismatch detected (dropbear bug), continuing anyway")
+            logging.getLogger(__name__).warning(
+                "MAC mismatch detected (dropbear bug), continuing anyway"
+            )
             # Return empty message to let the connection continue
             from paramiko.message import Message
+
             return paramiko.common.MSG_IGNORE, Message()
         raise
+
 
 paramiko.packet.Packetizer.read_message = _patched_read_message
 
@@ -79,7 +83,9 @@ class network(utils):
         )
         # Apply monkey patch for MicroBlaze boards if enabled
         if self.microblaze_enable:
-            log.info("Applying Paramiko monkey patch for MicroBlaze dropbear compatibility")
+            log.info(
+                "Applying Paramiko monkey patch for MicroBlaze dropbear compatibility"
+            )
             paramiko.packet.Packetizer.read_message = _patched_read_message
         else:
             log.info("Using standard Paramiko read_message method")
@@ -106,7 +112,9 @@ class network(utils):
                 if conn.client.get_transport():
                     transport = conn.client.get_transport()
                     transport.window_size = 2147483647  # Maximum window size
-                    transport.max_packet_size = 32768  # Smaller packet size for compatibility
+                    transport.max_packet_size = (
+                        32768  # Smaller packet size for compatibility
+                    )
                     transport.packetizer.REKEY_BYTES = pow(2, 30)  # Delay rekeying
                     transport.packetizer.REKEY_PACKETS = pow(2, 30)
         except Exception as e:
@@ -158,7 +166,7 @@ class network(utils):
                     hide=True,
                     timeout=self.ssh_timeout,
                     pty=self.pty,
-                    warn = True,
+                    warn=True,
                     in_stream=False,
                 )
                 log.info("SSH successful")
@@ -173,7 +181,7 @@ class network(utils):
                 if conn is not None:
                     try:
                         conn.close()
-                    except:
+                    except Exception:
                         pass
         return result.failed
 
@@ -221,7 +229,7 @@ class network(utils):
                 if conn is not None:
                     try:
                         conn.close()
-                    except:
+                    except Exception:
                         pass
 
     def run_ssh_command(
@@ -306,7 +314,7 @@ class network(utils):
                 if conn is not None:
                     try:
                         conn.close()
-                    except:
+                    except Exception:
                         pass
 
     def update_boot_partition(
@@ -414,7 +422,7 @@ class network(utils):
             if conn is not None:
                 try:
                     conn.close()
-                except:
+                except Exception:
                     pass
 
     def check_dmesg(self, error_on_warnings=False):
@@ -435,15 +443,17 @@ class network(utils):
         if self.microblaze_enable:
             max_retries = 3
             for attempt in range(max_retries):
-                log.info("dmesg command attempt: " + str(attempt +1))
+                log.info("dmesg command attempt: " + str(attempt + 1))
                 try:
                     self.run_ssh_command("dmesg > " + tmp_filename)
                     self._dl_file(tmp_filename)
-                    self.run_ssh_command('dmesg | grep -E "failed|error" > ' + tmp_filename_err)
+                    self.run_ssh_command(
+                        'dmesg | grep -E "failed|error" > ' + tmp_filename_err
+                    )
                     self._dl_file(tmp_filename_err)
                     break
                 except Exception as e:
-                    log.warning(f"attempt {attempt +1} failed with exception: {e}")
+                    log.warning(f"attempt {attempt + 1} fa  iled with exception: {e}")
                     if attempt == max_retries - 1:
                         raise e
         elif self.board_name == "pluto" or self.board_name == "m2k":
@@ -480,7 +490,7 @@ class network(utils):
             all_log = f.readlines()
         logging.info("dmesg logs collected")
 
-        #filtering known errors
+        # filtering known errors
         path = pathlib.Path(__file__).parent.absolute()
         res = os.path.join(path, "resources", "err_rejects.txt")
         with open(res) as f:
@@ -504,7 +514,9 @@ class network(utils):
             log.info("Errors found in dmesg logs")
 
         logs = {"log": all_log, "error": error_log_filetered}
-        if not self.microblaze_enable: #subject for change, need to identify what are the warnings and the errors for microblaze
+        if (
+            not self.microblaze_enable
+        ):  # subject for change, need to identify what are the warnings and the errors for microblaze
             logs.update({"warn": warn_log})
         return len(error_log_filetered) > 0, logs
 
@@ -574,5 +586,5 @@ class network(utils):
                         stdout = "\n".join(stdout)
                     log.debug(f"Full log:\n{stdout}")
                     break
-        time.sleep(2) # wait a bit before returning to close ssh connection
+        time.sleep(2)  # wait a bit before returning to close ssh connection
         return False

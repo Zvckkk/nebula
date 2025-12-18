@@ -2,8 +2,8 @@ import logging
 import os
 import shutil
 import subprocess
-import time
 import sys
+import time
 
 from nebula.common import utils
 
@@ -34,7 +34,7 @@ class jtag(utils):
         self.update_defaults_from_yaml(
             yamlfilename, __class__.__name__, board_name=board_name
         )
-        
+
         # Check target device available
         jtag_connected = False
         for c in range(self.jtag_connect_retries):
@@ -54,7 +54,7 @@ class jtag(utils):
             )
             time.sleep(1)
 
-        #jtag_connected=True
+        # jtag_connected=True
 
         if not jtag_connected:
             raise Exception(
@@ -86,7 +86,7 @@ class jtag(utils):
             )
         else:
             vivado = os.path.join(self.custom_vivado_path, "settings64.sh")
-            vivado = f'. {vivado}'
+            vivado = f". {vivado}"
         if not os.path.isfile(vivado[2:]):
             raise Exception(
                 "Vivado not found at: " + vivado[: -(len("settings64.sh") + 1)]
@@ -95,7 +95,7 @@ class jtag(utils):
         cmd = vivado + '; xsdb -eval "{}"'.format(cmd)
         # cmd = [vivado + '; xsdb',' -eval "{}"'.format(cmd)]
         return self._shell_out2(cmd)
-        #return self.run_command_realtime(cmd, shell=True) == 0
+        # return self.run_command_realtime(cmd, shell=True) == 0
 
     def restart_board(self):
         cmd = "connect; "
@@ -115,9 +115,9 @@ class jtag(utils):
 
     def target_set_str(self, target_name):
         return (
-                "targets -set -filter {jtag_cable_name =~ {*"
-                + self.jtag_cable_id
-                + "} && name =~ {"
+            "targets -set -filter {jtag_cable_name =~ {*"
+            + self.jtag_cable_id
+            + "} && name =~ {"
             + target_name
             + "}} ; "
         )

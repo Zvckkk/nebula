@@ -119,21 +119,25 @@ def test_noos_downloader(test_downloader, board_name, branch, filetype):
     assert os.path.isfile("outs/hashes.txt")
 
 
-#@pytest.mark.skip(reason="Not built") #remove for testing
+# @pytest.mark.skip(reason="Not built") #remove for testing
 @pytest.mark.parametrize("board_name", ["kcu105_adrv9371x"])
 @pytest.mark.parametrize("branch", ["main"])
 @pytest.mark.parametrize("filetype", ["microblaze"])
 def test_microblaze_downloader(test_downloader, board_name, branch, filetype):
     import sys
+
     import nebula
+
     print(f"DEBUG: Python executable: {sys.executable}")
     print(f"DEBUG: Nebula location: {nebula.__file__}")
     # Remove the test_downloader call and use microblaze.yaml directly
-    microblaze_yaml = os.path.join(os.path.dirname(__file__), "nebula_config", "microblaze.yaml")
-    
+    microblaze_yaml = os.path.join(
+        os.path.dirname(__file__), "nebula_config", "microblaze.yaml"
+    )
+
     if os.path.isdir("outs"):
         shutil.rmtree("outs")
-        
+
     d = downloader(yamlfilename=microblaze_yaml, board_name=board_name)
     d.download_boot_files(
         board_name,
@@ -142,13 +146,13 @@ def test_microblaze_downloader(test_downloader, board_name, branch, filetype):
         branch=branch,
         microblaze=True,
     )
-    
-    #assert os.path.isfile("outs/system_top.xsa")      # HDL file
-    assert os.path.isfile("outs/system_top.bit")      # Bitstream
-    assert os.path.isfile("outs/simpleImage.strip")   # MicroBlaze kernel
+
+    # assert os.path.isfile("outs/system_top.xsa")      # HDL file
+    assert os.path.isfile("outs/system_top.bit")  # Bitstream
+    assert os.path.isfile("outs/simpleImage.strip")  # MicroBlaze kernel
     assert os.path.isfile("outs/properties.yaml")
     assert os.path.isfile("outs/hashes.txt")
-    
+
     # Cleanup
     if os.path.isdir("outs"):
         shutil.rmtree("outs")

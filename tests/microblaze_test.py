@@ -1,19 +1,22 @@
 import os
-import time
-import pytest
 import shutil
-from nebula import downloader
-from nebula import network
-import nebula
+import time
 
+import pytest
+
+import nebula
+from nebula import downloader, network
 
 here = os.path.dirname(os.path.abspath(__file__))
-cfg = os.path.join(here, "nebula_config","microblaze.yaml")
+cfg = os.path.join(here, "nebula_config", "microblaze.yaml")
 out_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outs")
 log_folder = os.path.join(here, "logs")
 if not os.path.exists(log_folder):
     os.makedirs(log_folder)
-manager = nebula.manager(configfilename=cfg, board_name="kcu105_adrv9371x", microblaze=True)
+manager = nebula.manager(
+    configfilename=cfg, board_name="kcu105_adrv9371x", microblaze=True
+)
+
 
 def test_microblaze_downloader():
     # Clean output folder
@@ -30,9 +33,12 @@ def test_microblaze_downloader():
     )
 
     assert os.path.isfile(os.path.join("/root/wk_ace/nebula/outs/", "system_top.bit"))
-    assert os.path.isfile(os.path.join("/root/wk_ace/nebula/outs/", "simpleImage.strip"))
+    assert os.path.isfile(
+        os.path.join("/root/wk_ace/nebula/outs/", "simpleImage.strip")
+    )
     assert os.path.isfile(os.path.join("/root/wk_ace/nebula/outs/", "hashes.txt"))
-    #assert os.path.isfile(os.path.join("/root/wk_ace/nebula/outs/", "properties.yaml"))
+    # assert os.path.isfile(os.path.join("/root/wk_ace/nebula/outs/", "properties.yaml"))
+
 
 def test_microblaze_boot():
     # Use files from outs folder
@@ -41,20 +47,22 @@ def test_microblaze_boot():
     assert os.path.isfile(bitstream), "Bitstream file not found"
     assert os.path.isfile(strip), "Strip file not found"
 
-
     manager = nebula.manager(configfilename=cfg, board_name="kcu105_adrv9371x")
-    manager.monitor[0].logfilename = os.path.join(log_folder, "kcu105_adrv9371x") # Flush
+    manager.monitor[0].logfilename = os.path.join(
+        log_folder, "kcu105_adrv9371x"
+    )  # Flush
 
-    #boot microblaze board
-    manager.board_reboot_auto_folder(
-        out_folder,
-        microblaze=True
-    )
+    # boot microblaze board
+    manager.board_reboot_auto_folder(out_folder, microblaze=True)
 
-#@pytest.mark.stress 
+
+# @pytest.mark.stress
 def test_microblaze_network():
-    #test SSH connection and dmesg check for microblaze
-    manager.monitor[0].logfilename = os.path.join(log_folder, "kcu105_adrv9371x") # Flush
-    net = network(yamlfilename=cfg, board_name='kcu105_adrv9371x', dutip=manager.net.dutip)
+    # test SSH connection and dmesg check for microblaze
+    manager.monitor[0].logfilename = os.path.join(
+        log_folder, "kcu105_adrv9371x"
+    )  # Flush
+    net = network(
+        yamlfilename=cfg, board_name="kcu105_adrv9371x", dutip=manager.net.dutip
+    )
     net.check_dmesg()
-    
