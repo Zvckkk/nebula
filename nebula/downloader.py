@@ -419,10 +419,10 @@ class downloader(utils):
     def _download_firmware(self, device, source="github", release=None, version=None):
         if "m2k" in device.lower() or "adalm-2000" in device.lower():
             dev = "m2k"
-            fw_filename = "m2k.frm"
+            fw_filename = "m2k-fw-v0.33-1-gdce1.zip"
         elif "pluto" in device.lower():
             dev = "plutosdr"
-            fw_filename = "pluto.frm"
+            fw_filename = "plutosdr-fw-v0.39-1-g8456.zip"
         else:
             raise Exception("Unknown device " + device)
 
@@ -477,7 +477,7 @@ class downloader(utils):
                 url = f"https://dl.cloudsmith.io/basic/adi/{dev}-fw/raw/versions/{version}/{fw_filename}"
                 log.info(f"Downloading {fw_filename} version {version} from Cloudsmith: {url}")
             else:
-                # url = f"https://dl.cloudsmith.io/basic/adi/hdl-test/raw/versions/latest/{fw_filename}"
+                # url = f"https://dl.cloudsmith.io/basic/adi/m2k-fw/raw/versions/latest/m2k-fw-v0.33-1-gdce1.zip"
                 url = f"https://dl.cloudsmith.io/basic/adi/{dev}-fw/raw/versions/latest/{fw_filename}"
                 log.info(f"Downloading latest {fw_filename} from Cloudsmith: {url}")
             dest = "outs"
