@@ -9,38 +9,11 @@ import subprocess
 import time
 
 import fabric
-import paramiko.common
-import paramiko.packet
 from fabric import Connection
-from paramiko import AutoAddPolicy
 
 import nebula.errors as ne
 import nebula.helper as helper
 from nebula.common import utils
-
-# Monkey-patch Paramiko to skip MAC verification for dropbear compatibility
-# This works around a known bug in older dropbear versions with large data transfers
-_original_read_message = paramiko.packet.Packetizer.read_message
-
-
-def _patched_read_message(self):
-    """Patched read_message that skips MAC check on verification failure"""
-    try:
-        return _original_read_message(self)
-    except paramiko.SSHException as e:
-        if "Mismatched MAC" in str(e):
-            # Log the error but don't fail - this is a known dropbear bug
-            logging.getLogger(__name__).warning(
-                "MAC mismatch detected (dropbear bug), continuing anyway"
-            )
-            # Return empty message to let the connection continue
-            from paramiko.message import Message
-
-            return paramiko.common.MSG_IGNORE, Message()
-        raise
-
-
-paramiko.packet.Packetizer.read_message = _patched_read_message
 
 log = logging.getLogger(__name__)
 
@@ -76,51 +49,10 @@ class network(utils):
             self.dhcp = False
         self.ssh_timeout = 30
         self.board_name = board_name
-        self.pty = True  # Use PTY mode to avoid MAC mismatch errors with dropbear
 
         self.microblaze_enable = any(
             keyword in self.board_name.lower() for keyword in ["kcu", "vc", "kc"]
         )
-        # Apply monkey patch for MicroBlaze boards if enabled
-        if self.microblaze_enable:
-            log.info(
-                "Applying Paramiko monkey patch for MicroBlaze dropbear compatibility"
-            )
-            paramiko.packet.Packetizer.read_message = _patched_read_message
-        else:
-            log.info("Using standard Paramiko read_message method")
-            paramiko.packet.Packetizer.read_message = _original_read_message
-
-    def _get_connection(self):
-        """Create a fabric Connection with host key checking disabled"""
-        conn = Connection(
-            self.dutusername + "@" + self.dutip,
-            connect_kwargs={
-                "password": self.dutpassword,
-                "allow_agent": False,
-                "look_for_keys": False,
-                "disabled_algorithms": {},  # Ensure no algorithms are disabled
-                "banner_timeout": 60,  # Increase banner timeout for slow connections
-            },
-        )
-        # Disable SSH host key checking by setting policy to auto-add
-        try:
-            conn.open()
-            if conn.client:
-                conn.client.set_missing_host_key_policy(AutoAddPolicy())
-                # Set transport options for better compatibility with dropbear
-                if conn.client.get_transport():
-                    transport = conn.client.get_transport()
-                    transport.window_size = 2147483647  # Maximum window size
-                    transport.max_packet_size = (
-                        32768  # Smaller packet size for compatibility
-                    )
-                    transport.packetizer.REKEY_BYTES = pow(2, 30)  # Delay rekeying
-                    transport.packetizer.REKEY_PACKETS = pow(2, 30)
-        except Exception as e:
-            log.error(f"Failed to establish SSH connection: {e}")
-            raise
-        return conn
 
     def ping_board(self, tries=10):
         """Ping board and check if any received
@@ -157,32 +89,24 @@ class network(utils):
         """
         retries = 3
         for t in range(retries):
-            conn = None
             try:
                 log.info("Checking for board through SSH")
-                conn = self._get_connection()
-                result = conn.run(
+                result = fabric.Connection(
+                    self.dutusername + "@" + self.dutip,
+                    connect_kwargs={"password": self.dutpassword},
+                ).run(
                     "uname -a",
                     hide=True,
                     timeout=self.ssh_timeout,
-                    pty=self.pty,
-                    warn=True,
+                    pty=True,
                     in_stream=False,
                 )
-                log.info("SSH successful")
                 break
             except Exception as ex:
                 log.warning("Exception raised: " + str(ex))
                 time.sleep(3)
                 if t >= (retries - 1):
-                    log.error("SSH failed after all retries")
                     raise Exception("SSH Failed")
-            finally:
-                if conn is not None:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
         return result.failed
 
     def check_board_booted(self):
@@ -201,36 +125,28 @@ class network(utils):
 
     def reboot_board(self, bypass_sleep=False):
         """Reboot board over SSH, otherwise raise exception"""
-        log.info("Rebooting board over SSH")
         # Try to reboot board with SSH if possible
         retries = 3
-        ex = None
         for t in range(retries):
-            conn = None
             try:
-                conn = self._get_connection()
-                result = conn.run("/sbin/reboot", hide=True, pty=self.pty)
+                result = fabric.Connection(
+                    self.dutusername + "@" + self.dutip,
+                    connect_kwargs={"password": self.dutpassword},
+                ).run("/sbin/reboot", hide=False)
                 if result.ok:
                     print("Rebooting board with SSH")
                     if not bypass_sleep:
                         time.sleep(30)
                     break
                 else:
-                    # Use PDU
+                    # TODO:  Use PDU
                     raise Exception("PDU reset not implemented yet")
 
-            except Exception as inner_ex:
-                ex = inner_ex
+            except Exception as ex:
                 log.warning("Exception raised: " + str(ex))
                 time.sleep(3)
                 if t >= (retries - 1):
                     raise Exception("Exception occurred during SSH Reboot", str(ex))
-            finally:
-                if conn is not None:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
 
     def run_ssh_command(
         self,
@@ -242,24 +158,23 @@ class network(utils):
     ):
         result = None
         filename = None
-        ex = None
         for t in range(retries):
             log.info(
                 "ssh command:" + command + " to " + self.dutusername + "@" + self.dutip
             )
-            conn = None
             try:
-                conn = self._get_connection()
-                result = conn.run(
+                result = fabric.Connection(
+                    self.dutusername + "@" + self.dutip,
+                    connect_kwargs={"password": self.dutpassword},
+                ).run(
                     command,
                     hide=True,
                     timeout=self.ssh_timeout,
-                    pty=self.pty,  # Use PTY to avoid MAC mismatch errors with dropbear
+                    pty=True,
                     in_stream=False,
                 )
 
                 if result.failed:
-                    log.error(f"Command failed: {command}")
                     raise Exception("Failed to run command:", command)
 
                 if print_result_to_file:
@@ -281,41 +196,29 @@ class network(utils):
                         with open(f"{self.board_name}_err_{filename}.log", "w") as f:
                             f.write(result.stderr)
                 break
-            except Exception as inner_ex:
-                ex = inner_ex
-                log.warning("Exception raised: " + str(ex), exc_info=True)
-                if not ignore_exceptions and t >= (retries - 1):
-                    raise Exception("SSH Failed: " + str(ex))
-            finally:
-                if conn is not None:
-                    try:
-                        conn.close()
-                    except Exception as close_ex:
-                        log.warning("Failed to close connection: " + str(close_ex))
+            except Exception as ex:
+                log.warning("Exception raised: " + str(ex))
+                if not ignore_exceptions:
+                    time.sleep(3)
+                    if t >= (retries - 1):
+                        raise Exception("SSH Failed: " + str(ex))
+
         return result
 
     def copy_file_to_remote(self, src, dest):
         retries = 3
-        ex = None
         log.info("Copying file to remote: " + src)
         for t in range(retries):
-            conn = None
             try:
-                conn = self._get_connection()
-                conn.put(src, remote=dest)
-                break
-            except Exception as inner_ex:
-                ex = inner_ex
+                Connection(
+                    self.dutusername + "@" + self.dutip,
+                    connect_kwargs={"password": self.dutpassword},
+                ).put(src, remote=dest)
+            except Exception as ex:
                 log.warning("Exception raised: " + str(ex))
                 time.sleep(3)
                 if t >= (retries - 1):
                     raise ne.SSHError
-            finally:
-                if conn is not None:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
 
     def update_boot_partition(
         self,
@@ -414,16 +317,10 @@ class network(utils):
         self.run_ssh_command("sudo reboot", ignore_exceptions=True)
 
     def _dl_file(self, filename):
-        conn = None
-        try:
-            conn = self._get_connection()
-            conn.get(filename)
-        finally:
-            if conn is not None:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+        fabric.Connection(
+            self.dutusername + "@" + self.dutip,
+            connect_kwargs={"password": self.dutpassword},
+        ).get(filename)
 
     def check_dmesg(self, error_on_warnings=False):
         """check_dmesg:
@@ -453,7 +350,7 @@ class network(utils):
                     self._dl_file(tmp_filename_err)
                     break
                 except Exception as e:
-                    log.warning(f"attempt {attempt + 1} fa  iled with exception: {e}")
+                    log.warning(f"attempt {attempt + 1} failed with exception: {e}")
                     if attempt == max_retries - 1:
                         raise e
         elif self.board_name == "pluto" or self.board_name == "m2k":
@@ -553,38 +450,3 @@ class network(utils):
                     f"Checksum does not match for {file_path}:\
                          Ref: {reference} Actual: {result.stdout.strip()}"
                 )
-
-    def monitor_dmesg(self, find_string, max_timeout_seconds=60, enable_log=True):
-        """monitor_dmesg:
-        Monitor dmesg for specific strings
-
-        return:
-            status: 0 if no errors found, 1 otherwise
-        """
-        if not isinstance(find_string, str):
-            raise Exception("find_string must be a string")
-        log.info(f"Monitoring dmesg for string {find_string}")
-        start_time = time.time()
-        connection = self._get_connection()
-        with connection as c:
-            while True:
-                time.sleep(5)
-                dmesg_stream = c.run("dmesg", hide=True, pty=self.pty)
-                if not isinstance(dmesg_stream.stdout, list):
-                    stdout = dmesg_stream.stdout.splitlines()
-                else:
-                    stdout = dmesg_stream.stdout
-                for line in stdout:
-                    if enable_log:
-                        log.info(f"Got: {line}")
-                    if find_string in line:
-                        log.info(f"Found string {find_string} in dmesg")
-                        return True
-                if (time.time() - start_time) > max_timeout_seconds:
-                    log.info(f"Timeout waiting for string {find_string} in dmesg")
-                    if isinstance(stdout, list):
-                        stdout = "\n".join(stdout)
-                    log.debug(f"Full log:\n{stdout}")
-                    break
-        time.sleep(2)  # wait a bit before returning to close ssh connection
-        return False
