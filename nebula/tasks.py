@@ -430,9 +430,13 @@ def download_boot_files(
     cloudsmith_auth=None,
     version=None,
 ):
-        
+
     """Download bootfiles for a specific development system"""
-    d = nebula.downloader(yamlfilename=yamlfilename, board_name=board_name, cloudsmith_auth=cloudsmith_auth)
+    d = nebula.downloader(
+        yamlfilename=yamlfilename,
+        board_name=board_name,
+        cloudsmith_auth=cloudsmith_auth,
+    )
     try:
         file = {
             "firmware": None,
@@ -457,7 +461,7 @@ def download_boot_files(
         noos=file["noos"],
         microblaze=file["microblaze"],
         rpi=file["rpi"],
-        url_template=url_template, 
+        url_template=url_template,
         version=version,
     )
 
