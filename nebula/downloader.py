@@ -561,7 +561,97 @@ class downloader(utils):
                 except WindowsError:
                     os.remove(new_fname)
                     os.rename(old_fname, new_fname)
-    
+
+    def _get_cloudsmith_file(self, branch, kernel, dt, board_name):
+        """
+        Fetch and process files from Cloudsmith.
+        """
+        log.info("Getting standard boot files (Cloudsmith)")
+        api_key = self.cloudsmith_token
+        if not api_key:
+            raise Exception(
+                "Cloudsmith API key missing. Set CLOUDSMITH_API_KEY environment variable."
+            )
+        # repo is subject for change once the official repo for kuiper boot partition is created
+        repo = "sdp-ph-common"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+        }
+
+        # Check if branch contains a specific date
+        if "/" in branch:
+            branch, specific_date = branch.split("/", 1)
+            query = f"version:{branch}/{specific_date}"
+        else:
+            query = f"version:{branch}"
+
+        url = f"https://api.cloudsmith.io/v1/packages/adi/{repo}/?query={query}"
+        log.info(f"Fetching Cloudsmith metadata via REST API: {url}")
+
+        # Fetch all packages
+        all_packages = []
+        while url:
+            resp = requests.get(url, headers=headers)
+            resp.raise_for_status()
+            page = resp.json()
+
+            if isinstance(page, dict) and "results" in page:
+                all_packages.extend(page["results"])
+                url = page.get("next")
+            elif isinstance(page, list):
+                all_packages.extend(page)
+                url = None
+            else:
+                log.error("Unexpected response format from Cloudsmith API")
+                raise Exception("Unexpected response format from Cloudsmith API")
+
+        log.info(f"Total packages fetched: {len(all_packages)}")
+
+        # If no specific date, get the newest folder
+        if "/" not in branch:
+            get_newest_folder(all_packages, source="cloudsmith")
+
+        # Define boot files and general boards
+        boot_files = [kernel, "BOOT.BIN", "bootgen_sysfiles.tgz", dt]
+        general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
+
+        # Process each boot file
+        for filename in boot_files:
+            matched_pkg = next(
+                (
+                    pkg
+                    for pkg in all_packages
+                    if pkg.get("filename") == filename
+                    and branch in pkg.get("version", "")
+                    and (
+                        board_name in pkg.get("version", "")
+                        or filename in ["uImage", "Image", "zImage"]
+                        and any(
+                            gb in pkg.get("version", "") for gb in general_image_boards
+                        )
+                    )
+                ),
+                None,
+            )
+
+            if matched_pkg:
+                cdn_url = matched_pkg.get("cdn_url")
+                sha256 = matched_pkg.get("checksum_sha256")
+                dest = "outs"
+                os.makedirs(dest, exist_ok=True)
+                out_path = os.path.join(dest, filename)
+
+                log.info(f"Downloading {filename} from {cdn_url}")
+                self.download(cdn_url, out_path)
+                if sha256:
+                    self.check(out_path, sha256, hash_type="sha256")
+                log.info(f"Downloaded and verified: {out_path}")
+            else:
+                raise Exception(
+                    f"No package found for {filename} with version {branch}/{specific_date} and board {board_name}"
+                )
+				
     def _get_files_boot_partition(
         self,
         reference_boot_folder,
@@ -576,104 +666,8 @@ class downloader(utils):
         url_template=None,
     ):
         if source == "cloudsmith":
-            log.info("Getting standard boot files (Cloudsmith)")
-            api_key = self.cloudsmith_token
-            if not api_key:
-                log.error("Cloudsmith API key missing. Set CLOUDSMITH_API_KEY environment variable.")
-                raise Exception("Cloudsmith API key missing.")
+            self._get_cloudsmith_file(branch, kernel, dt, self.board_name)
 
-            repo = "adi/sdp-ph-common"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-            }
-            query_branch = branch
-            url = f"https://api.cloudsmith.io/v1/packages/{repo}/?query=version:{query_branch}"
-
-            log.info(f"Fetching Cloudsmith metadata via REST API: {url}")
-            all_packages = []
-            while url:
-                resp = requests.get(url, headers=headers)
-                resp.raise_for_status()
-                page = resp.json()
-                if isinstance(page, dict) and "results" in page:
-                    all_packages.extend(page["results"])
-                    url = page.get("next")
-                else:
-                    all_packages.extend(page)
-                    url = None
-
-            log.info(f"Total packages fetched: {len(all_packages)}")
-            for pkg in all_packages:
-                log.info(f"Package: filename={pkg.get('filename')}, version={pkg.get('version')}")
-
-            boot_files = [kernel, "BOOT.BIN", "bootgen_sysfiles.tgz", dt]
-            general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
-            for filename in boot_files:
-                if "/" in branch:
-                    matched_pkg = None
-                    for pkg in all_packages:
-                        board_match = (
-                            self.board_name in pkg.get("version","") or
-                            (filename in ["uImage","Image","zImage"] and any(gb in pkg.get("version","") for gb in general_image_boards))
-                        )
-                        if (pkg.get("filename") == filename
-                            and pkg.get("version","").startswith(branch)
-                            and board_match
-                        ):
-                            matched_pkg = pkg
-                            break
-                    if matched_pkg:
-                        cdn_url = matched_pkg.get("cdn_url")
-                        sha256 = matched_pkg.get("checksum_sha256")
-                        dest = "outs"
-                        if not os.path.isdir(dest):
-                            os.mkdir(dest)
-                        out_path = os.path.join(dest, filename)
-                        log.info(f"Downloading {filename} from {cdn_url} ...")
-                        try:
-                            self.download(cdn_url, out_path)
-                        except Exception as e:
-                            log.error(f"Download failed: {e}")
-                        if sha256:
-                            try:
-                                self.check(out_path, sha256, hash_type="sha256")
-                            except Exception as e:
-                                log.error(f"SHA256 check failed: {e}")
-                                raise
-                        log.info(f"Downloaded and verified: {out_path}")
-                    else:
-                        log.error(f"No package found for {filename} with version {branch} and board {self.board_name}")
-                        raise Exception(f"No package found for {filename} with version {branch} and board {self.board_name}")
-                else:
-                    log.warning(f"No direct match found for {filename} in branch {branch}. Attempting to find newest dated version.")
-                    newest_pkg = get_newest_folder(all_packages, source="cloudsmith", branch=branch, filename=filename, board_name=self.board_name)
-                    if newest_pkg: 
-                        pkg_version = newest_pkg.get("version")
-                        log.info(f"Matched filename: {filename}, newest package version: {pkg_version}")
-                        cdn_url = newest_pkg.get("cdn_url")
-                        sha256 = newest_pkg.get("checksum_sha256")
-                        dest = "outs"
-                        if not os.path.isdir(dest):
-                            os.mkdir(dest)
-                        out_path = os.path.join(dest, filename)
-                        log.info(f"Downloading {filename} from {cdn_url} ...")
-                        try:
-                            self.download(cdn_url, out_path, username=self.username, cloudsmith_token=self.cloudsmith_token)
-                        except Exception as e:
-                            log.error(f"Download failed: {e}")
-                            raise
-                        if sha256:
-                            try:
-                                self.check(out_path, sha256, hash_type="sha256")
-                            except Exception as e:
-                                log.error(f"SHA256 check failed: {e}")
-                                raise
-                        log.info(f"Downloaded and verified: {out_path}")
-                    else:
-                        log.error(f"No dated version found for {filename} in branch {branch}")
-                        raise Exception(f"No dated version found for {filename} in branch {branch}")
-            return None
         elif source == "artifactory":
             if url_template:
                 url_template = (
@@ -681,53 +675,53 @@ class downloader(utils):
                 )
             else:
                 url_template = "https://{}/artifactory/sdg-generic-development/boot_partition/{}/{}/{}"
-
-        log.info("Getting standard boot files")
-        # Get kernel
-        log.info("Getting " + kernel)
-        self._get_file(
-            kernel, source, kernel_root, source_root, branch, url_template=url_template
-        )
-
-        if boot_subfolder is not None:
-            design_source_root = os.path.join(reference_boot_folder, boot_subfolder)
-        else:
-            design_source_root = reference_boot_folder
-        # Get BOOT.BIN
-        log.info("Getting BOOT.BIN")
-        self._get_file(
-            "BOOT.BIN",
-            source,
-            design_source_root,
-            source_root,
-            branch,
-            url_template=url_template,
-        )
-        # Get support files (bootgen_sysfiles.tgz)
-        log.info("Getting support files")
-        self._get_file(
-            "bootgen_sysfiles.tgz",
-            source,
-            design_source_root,
-            source_root,
-            branch,
-            url_template=url_template,
-        )
-
-        # Get device tree
-        log.info("Getting " + dt)
-        if devicetree_subfolder is not None:
-            design_source_root = reference_boot_folder + "/" + devicetree_subfolder
-        else:
-            design_source_root = reference_boot_folder
-        self._get_file(
-            dt,
-            source,
-            design_source_root,
-            source_root,
-            branch,
-            url_template=url_template,
-        )
+    
+            log.info("Getting standard boot files")
+            # Get kernel
+            log.info("Getting " + kernel)
+            self._get_file(
+                kernel, source, kernel_root, source_root, branch, url_template=url_template
+            )
+    
+            if boot_subfolder is not None:
+                design_source_root = os.path.join(reference_boot_folder, boot_subfolder)
+            else:
+                design_source_root = reference_boot_folder
+            # Get BOOT.BIN
+            log.info("Getting BOOT.BIN")
+            self._get_file(
+                "BOOT.BIN",
+                source,
+                design_source_root,
+                source_root,
+                branch,
+                url_template=url_template,
+            )
+            # Get support files (bootgen_sysfiles.tgz)
+            log.info("Getting support files")
+            self._get_file(
+                "bootgen_sysfiles.tgz",
+                source,
+                design_source_root,
+                source_root,
+                branch,
+                url_template=url_template,
+            )
+    
+            # Get device tree
+            log.info("Getting " + dt)
+            if devicetree_subfolder is not None:
+                design_source_root = reference_boot_folder + "/" + devicetree_subfolder
+            else:
+                design_source_root = reference_boot_folder
+            self._get_file(
+                dt,
+                source,
+                design_source_root,
+                source_root,
+                branch,
+                url_template=url_template,
+            )
         if source == "cloudsmith":
             return None
         elif source == "artifactory":
