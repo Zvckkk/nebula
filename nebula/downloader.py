@@ -775,7 +775,6 @@ class downloader(utils):
             if microblaze:
                 design_source_root = f"microblaze_images/{design_name}"
                 print(f"DEBUG: MicroBlaze design_source_root: {design_source_root}")
-                print
 
                 # get simpleImage
                 log.info("Getting simpleimage")
@@ -971,37 +970,6 @@ class downloader(utils):
             else:
                 url_template = "https://{}/artifactory/sdg-generic-development/linux/releases/{}/{}/{}"
 
-        # if microblaze:
-        #    if branch == "main":
-        #        url_template = (
-        #            "https://{}/artifactory/sdg-generic-development/boot_partition/{}/{}/{}")
-        #    design_source_root = f"microblaze_images/{design_name}"
-        #    print(f"DEBUG: MicroBlaze design_source_root: {design_source_root}")
-        #    # get simpleImage
-        #    log.info("Getting simpleimage")
-        #    simpleimage = "simpleImage.strip"
-        #    self._get_file(
-        #        simpleimage,
-        #        source,
-        #        design_source_root,
-        #        source_root,
-        #        branch,
-        #        url_template=url_template,
-        #    )
-        #    # get bitstream
-        #    log.info("Getting bitstream")
-        #    bitstream = "system_top.bit"
-        #    self._get_file(
-        #        bitstream,
-        #        source,
-        #        design_source_root,
-        #        source_root,
-        #        branch,
-        #        url_template=url_template,
-        #    )
-        # else:
-
-        # Get files from linux folder
         # Get kernel
         log.info("Getting " + kernel)
         self._get_file(
@@ -1207,10 +1175,6 @@ class downloader(utils):
                 )
 
             if microblaze:
-                # hdl_branch = "master" if branch == "main" else branch
-                # self._get_files_hdl(
-                #    hdl_folder, source, source_root, hdl_branch, hdl_output=True
-                # )
                 self._get_files_boot_partition(
                     reference_boot_folder,
                     devicetree_subfolder,

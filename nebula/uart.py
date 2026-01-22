@@ -476,7 +476,6 @@ class uart(utils):
 
     def get_ip_address_microblaze(self):
         """Read IP address of DUT using ifconfig from UART for MicroBlaze"""
-        # cmd = "ifconfig eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v 127"
         cmd = "ifconfig eth0 | grep -v 127 | awk '$1 == \"inet\" {print $2}' | awk -F'/' '{print $1}'"
         restart = False
         if self.listen_thread_run:

@@ -51,7 +51,7 @@ class network(utils):
         self.board_name = board_name
 
         self.microblaze_enable = any(
-            keyword in self.board_name.lower() for keyword in ["kcu", "vc", "kc"]
+            keyword in self.board_name.lower() for keyword in ["kcu", "vc"]
         )
 
     def ping_board(self, tries=10):

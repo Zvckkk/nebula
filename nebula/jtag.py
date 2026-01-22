@@ -54,8 +54,6 @@ class jtag(utils):
             )
             time.sleep(1)
 
-        # jtag_connected=True
-
         if not jtag_connected:
             raise Exception(
                 "JTAG connection cannot find target HW: {}".format(self.jtag_cable_id)
@@ -86,16 +84,13 @@ class jtag(utils):
             )
         else:
             vivado = os.path.join(self.custom_vivado_path, "settings64.sh")
-            vivado = f". {vivado}"
         if not os.path.isfile(vivado[2:]):
             raise Exception(
                 "Vivado not found at: " + vivado[: -(len("settings64.sh") + 1)]
             )
 
         cmd = vivado + '; xsdb -eval "{}"'.format(cmd)
-        # cmd = [vivado + '; xsdb',' -eval "{}"'.format(cmd)]
         return self._shell_out2(cmd)
-        # return self.run_command_realtime(cmd, shell=True) == 0
 
     def restart_board(self):
         cmd = "connect; "
@@ -256,6 +251,5 @@ class jtag(utils):
         cmd += "con; "
         cmd += "after 3000; "
 
-        # self.run_command_realtime(cmd, shell=True)
         self.run_xsdb(cmd)
-        # 210308A3BB8D
+
