@@ -519,8 +519,8 @@ class downloader(utils):
         source_root,
         branch,
         addl=None,
-        version=None,
         url_template=None,
+        version=None,
     ):
         if source == "artifactory":
             self._get_artifactory_file(
