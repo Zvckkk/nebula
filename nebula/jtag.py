@@ -252,4 +252,3 @@ class jtag(utils):
         cmd += "after 3000; "
 
         self.run_xsdb(cmd)
-
