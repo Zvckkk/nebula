@@ -73,31 +73,7 @@ def get_newest_folder(
     links_or_packages, source="artifactory", branch=None, filename=None, board_name=None
 ):
     if source == "cloudsmith":
-        date_pkgs = []
-        general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
-        for pkg in links_or_packages:
-            pkg_version = pkg.get("version", "")
-            version_part = pkg_version.split("/")
-            board_in_version = version_part[-1] if len(version_part) >= 3 else ""
-            board_match = board_in_version == board_name or (
-                filename in ["uImage", "Image", "zImage"]
-                and board_in_version in general_image_boards
-            )
-            if (
-                pkg.get("filename") == filename
-                and pkg_version.startswith(branch + "/")
-                and board_match
-            ):
-                date_part = version_part[1] if len(version_part) > 1 else ""
-                if re.match(r"\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}", date_part):
-                    date_pkgs.append((date_part, pkg))
-        if not date_pkgs:
-            return None
-        date_pkgs.sort(
-            key=lambda x: datetime.strptime(x[0], "%Y_%m_%d-%H_%M_%S"), reverse=True
-        )
-        return date_pkgs[0][1]  # newest cloudsmith package
-
+        pass
     elif source == "artifactory":
         dates = []
         for link in links_or_packages:
@@ -587,7 +563,14 @@ class downloader(utils):
                     os.remove(new_fname)
                     os.rename(old_fname, new_fname)
 
-    def _get_cloudsmith_file(self, branch, kernel, dt, board_name):
+    def _get_cloudsmith_file(
+        self,
+        branch,
+        kernel,
+        dt,
+        board_name,
+        kernel_root,
+    ):
         """
         Fetch and process files from Cloudsmith.
         """
@@ -597,85 +580,157 @@ class downloader(utils):
             raise Exception(
                 "Cloudsmith API key missing. Set CLOUDSMITH_API_KEY environment variable."
             )
-        # repo is subject for change once the official repo for kuiper boot partition is created
-        repo = "sdp-ph-common"
-        headers = {
+
+        headers = self._get_cloudsmith_headers(api_key)
+        file_queries = self._construct_file_queries(
+            branch, kernel, dt, board_name, kernel_root
+        )
+        boot_files = [kernel, "BOOT.BIN", "bootgen_sysfiles.tgz", dt]
+
+        for filename in boot_files:
+            all_packages = self._fetch_all_packages(
+                headers, file_queries[filename], filename
+            )
+            filtered_packages = self._filter_packages(all_packages)
+
+            if filtered_packages:
+                self._download_and_verify_file(filtered_packages[0], filename)
+            else:
+                raise Exception(
+                    f"No package found for {filename} with version {branch} and board {board_name}"
+                )
+
+    def _get_cloudsmith_headers(self, api_key):
+        """Generate headers for Cloudsmith API requests."""
+        return {
             "Authorization": f"Bearer {api_key}",
             "Accept": "application/json",
         }
 
-        # Check if branch contains a specific date
-        if "/" in branch:
-            branch, specific_date = branch.split("/", 1)
-            query = f"version:{branch}/{specific_date}"
-        else:
-            query = f"version:{branch}"
+    def _construct_file_queries(self, branch, kernel, dt, board_name, kernel_root):
+        """Construct queries for fetching files from Cloudsmith."""
+        package_version = f"boot_partition/{branch}/"
 
-        url = f"https://api.cloudsmith.io/v1/packages/adi/{repo}/?query={query}"
-        log.info(f"Fetching Cloudsmith metadata via REST API: {url}")
+        latest_date = self._get_initial_metadata(branch, kernel, package_version)
 
-        # Fetch all packages
+        return {
+            kernel: f"version:boot_partition/{branch}/{latest_date}/{kernel_root}%20AND%20name:*mage$",
+            "BOOT.BIN": f"version:boot_partition/{branch}/{latest_date}/{board_name}*%20AND%20name:^BOOT.BIN$",
+            "bootgen_sysfiles.tgz": f"version:boot_partition/{branch}/{latest_date}/{board_name}%20AND%20name:^bootgen_sysfiles.tgz$",
+            dt: f"version:boot_partition/{branch}/{latest_date}/{board_name}*%20AND%20name:*.dtb$",
+        }
+
+    def _fetch_all_packages(self, headers, query, filename):
+        """Fetch all packages from Cloudsmith based on the query."""
         all_packages = []
+        page = 1
+        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size=500"
+        log.info(f"Fetching Cloudsmith metadata for {filename} via REST API: {url}")
+
         while url:
+            log.info(f"Fetching page {page} for {filename}")
             resp = requests.get(url, headers=headers)
             resp.raise_for_status()
-            page = resp.json()
+            page_data = resp.json()
 
-            if isinstance(page, dict) and "results" in page:
-                all_packages.extend(page["results"])
-                url = page.get("next")
-            elif isinstance(page, list):
-                all_packages.extend(page)
+            if isinstance(page_data, dict) and "results" in page_data:
+                all_packages.extend(page_data["results"])
+                url = page_data.get("next")
+            elif isinstance(page_data, list):
+                all_packages.extend(page_data)
                 url = None
             else:
                 log.error("Unexpected response format from Cloudsmith API")
                 raise Exception("Unexpected response format from Cloudsmith API")
 
-        log.info(f"Total packages fetched: {len(all_packages)}")
+            page += 1
 
-        # If no specific date, get the newest folder
-        if "/" not in branch:
-            get_newest_folder(all_packages, source="cloudsmith")
+        # Log the total number of packages found
+        if len(all_packages) == 0:
+            raise Exception(f"No packages found for {filename} with query: {query}")
+        else:
+            log.info(f"Total packages found for {filename}: {len(all_packages)}")
 
-        # Define boot files and general boards
-        boot_files = [kernel, "BOOT.BIN", "bootgen_sysfiles.tgz", dt]
-        general_image_boards = ["zynq-common", "zynqmp-common", "versal-common"]
+        return all_packages
 
-        # Process each boot file
-        for filename in boot_files:
-            matched_pkg = next(
-                (
-                    pkg
-                    for pkg in all_packages
-                    if pkg.get("filename") == filename
-                    and branch in pkg.get("version", "")
-                    and (
-                        board_name in pkg.get("version", "")
-                        or filename in ["uImage", "Image", "zImage"]
-                        and any(
-                            gb in pkg.get("version", "") for gb in general_image_boards
-                        )
-                    )
-                ),
-                None,
-            )
+    def _filter_packages(self, all_packages):
+        """Filter packages based on status and format."""
+        return [
+            {
+                "cdn_url": pkg.get("cdn_url"),
+                "version": pkg.get("version"),
+                "checksum_sha256": pkg.get("checksum_sha256"),
+            }
+            for pkg in all_packages
+            if pkg.get("status_str") == "Completed" and pkg.get("format") == "raw"
+        ]
 
-            if matched_pkg:
-                cdn_url = matched_pkg.get("cdn_url")
-                sha256 = matched_pkg.get("checksum_sha256")
-                dest = "outs"
-                os.makedirs(dest, exist_ok=True)
-                out_path = os.path.join(dest, filename)
+    def _download_and_verify_file(self, package, filename):
+        """Download and verify a file from Cloudsmith."""
+        cdn_url = package["cdn_url"]
+        sha256 = package["checksum_sha256"]
+        dest = "outs"
+        os.makedirs(dest, exist_ok=True)
+        out_path = os.path.join(dest, filename)
 
-                log.info(f"Downloading {filename} from {cdn_url}")
-                self.download(cdn_url, out_path)
-                if sha256:
-                    self.check(out_path, sha256, hash_type="sha256")
-                log.info(f"Downloaded and verified: {out_path}")
+        log.info(f"Downloading {filename} from {cdn_url}")
+        self.download(cdn_url, out_path)
+        if sha256:
+            self.check(out_path, sha256, hash_type="sha256")
+        log.info(f"Downloaded and verified: {out_path}")
+
+    def _get_initial_metadata(self, branch, filename, package_version):
+        """
+        Perform an initial query to fetch metadata fields, including the version field.
+        Filters and extracts the latest date from the version field.
+        """
+        log.info(f"Fetching initial metadata with branch {branch}")
+        headers = self._get_cloudsmith_headers(self.cloudsmith_token)
+        query = f"version:boot_partition/{branch}/*"
+        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page_size=500"
+
+        all_packages = []
+        while url:
+            resp = requests.get(url, headers=headers)
+            resp.raise_for_status()
+            page_data = resp.json()
+
+            if isinstance(page_data, dict) and "results" in page_data:
+                all_packages.extend(page_data["results"])
+                url = page_data.get("next")
+            elif isinstance(page_data, list):
+                all_packages.extend(page_data)
+                url = None
             else:
-                raise Exception(
-                    f"No package found for {filename} with version {branch}/{specific_date} and board {board_name}"
-                )
+                log.error("Unexpected response format from Cloudsmith API")
+                raise Exception("Unexpected response format from Cloudsmith API")
+
+        # Log all version fields for debugging
+        # log.info(f"All version fields returned: {[pkg.get('version', '') for pkg in all_packages]}")
+
+        # we get the list of dates from the version field
+        date_set = set()
+        for pkg in all_packages:
+            version = pkg.get("version", "")
+            if version.startswith(package_version):
+                remaining_path = version[len(package_version) :]
+                subfolder = remaining_path.split("/")[0]
+                try:
+                    date_obj = datetime.strptime(subfolder, "%Y_%m_%d-%H_%M_%S")
+                    date_set.add(date_obj)
+                except ValueError:
+                    continue
+
+        log.info(
+            f"Dates found: {[date.strftime('%Y_%m_%d-%H_%M_%S') for date in date_set]}"
+        )
+
+        if not date_set:
+            raise Exception(f"No valid dates found in metadata for {filename}")
+
+        latest_date = max(date_set).strftime("%Y_%m_%d-%H_%M_%S")
+        log.info(f"Latest date  {latest_date}")
+        return latest_date
 
     def _get_files_boot_partition(
         self,
@@ -691,7 +746,7 @@ class downloader(utils):
         url_template=None,
     ):
         if source == "cloudsmith":
-            self._get_cloudsmith_file(branch, kernel, dt, self.board_name)
+            self._get_cloudsmith_file(branch, kernel, dt, self.board_name, kernel_root)
 
         elif source == "artifactory":
             if url_template:
