@@ -817,9 +817,8 @@ class manager:
             log.info("Firmware based device selected")
             if jtag_mode:
                 raise Exception("jtag_mode not supported for firmware device")
-            try:
-                files = glob.glob(os.path.join(folder, "*.zip"))
-            except IndexError:
+            files = glob.glob(os.path.join(folder, "*.zip"))
+            if not files:
                 files = glob.glob(os.path.join(folder, "*.frm"))
             if not files:
                 raise Exception("No files found in folder: " + folder)
