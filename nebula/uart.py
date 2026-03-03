@@ -386,7 +386,7 @@ class uart(utils):
         # Check if we need to login to the console
         if not self._check_for_login():
             raise Exception("Console inaccessible due to login failure")
-        cmd = "/usr/local/bin/enable_static_ip.sh " + address + " " + nic
+        cmd = "enable_static_ip.sh " + address + " " + nic
         self._write_data(cmd)
         if restart:
             self._read_for_time(period=1)
@@ -400,7 +400,7 @@ class uart(utils):
         # Check if we need to login to the console
         if not self._check_for_login():
             raise Exception("Console inaccessible due to login failure")
-        cmd = "/usr/local/bin/enable_dhcp.sh"
+        cmd = "enable_dhcp.sh"
         self._write_data(cmd)
         self._read_for_time(period=1)
         cmd = "dhclient -r " + nic
