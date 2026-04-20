@@ -617,7 +617,7 @@ class downloader(utils):
     def _get_cloudsmith_headers(self, api_key):
         """Generate headers for Cloudsmith API requests."""
         return {
-            "Authorization": f"Bearer {api_key}",
+            "X-Api-Key": api_key,
             "Accept": "application/json",
         }
 
