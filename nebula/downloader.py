@@ -957,6 +957,17 @@ class downloader(utils):
         if source == "artifactory":
             get_gitsha(self.url, daily=True, linux=True)
 
+    def _detect_rpi_arch(self, kernel):
+        if self.board_name and "rpi5" in self.board_name.lower():
+            return "64bit"
+        if kernel:
+            kernel_name = kernel if isinstance(kernel, str) else (kernel[0] if kernel else "")
+            if "2712" in kernel_name:
+                return "64bit"
+        if self.modules and "v8" in str(self.modules).lower():
+            return "64bit"
+        return "32bit"
+
     def _get_files_rpi(
         self,
         source,
@@ -972,12 +983,15 @@ class downloader(utils):
             os.mkdir(dest)
         # download properties.txt
         if source == "artifactory":
-            arch = "32bit"
             url_template = (
                 "https://{}/artifactory/sdg-generic-development/linux_rpi/{}/{}"
             )
             url = url_template.format(source_root, branch, "")
             build_date = get_newest_folder(listFD(url))
+
+            arch = self._detect_rpi_arch(kernel)
+            log.info(f"Detected RPi architecture: {arch}")
+
             url = url_template.format(
                 source_root, branch, build_date + "/" + arch + "/version_rpi.txt"
             )
@@ -1004,7 +1018,7 @@ class downloader(utils):
             self.download(url, file)
 
         if not kernel:
-            kernel = ["kernel.img", "kernel7.img", "kernel7l.img"]
+            kernel = ["kernel.img", "kernel7.img", "kernel7l.img", "kernel_2712.img", "kernel8.img"]
         else:
             kernel = [kernel]
 
@@ -1019,7 +1033,7 @@ class downloader(utils):
             file = os.path.join(dest, k)
             self.download(url, file)
 
-        tar_file = "rpi_modules_32bit.tar.gz"
+        tar_file = f"rpi_modules_{arch}.tar.gz"
         log.info("Get modules " + tar_file)
         url = url_template.format(build_date, tar_file)
         file = os.path.join(dest, tar_file)
