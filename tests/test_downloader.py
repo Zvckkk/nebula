@@ -141,8 +141,9 @@ def test_rpi_downloader(test_downloader, board_name, branch, filetype):
     test_downloader(board_name, branch, filetype)
     assert os.path.isfile("outs/kernel7l.img")
     assert os.path.isfile("outs/rpi-adxrs290.dtbo")
-    #assert os.path.isfile("outs/properties.txt")
+    # assert os.path.isfile("outs/properties.txt")
     assert os.path.isfile("outs/hashes.txt")
+
 
 @pytest.mark.parametrize("board_name", ["rpi5-adis16480bmlz"])
 @pytest.mark.parametrize("branch", ["v6.12.y-2026r1"])
@@ -152,8 +153,9 @@ def test_rpi5_downloader(test_downloader, board_name, branch, filetype):
     assert os.path.isfile("outs/kernel_2712.img")
     assert os.path.isfile("outs/adis16480.dtbo")
     assert os.path.isfile("outs/rpi_modules_64bit.tar.gz")
-    #assert os.path.isfile("outs/properties.txt")
-    #assert os.path.isfile("outs/hashes.txt")
+    # assert os.path.isfile("outs/properties.txt")
+    # assert os.path.isfile("outs/hashes.txt")
+
 
 @pytest.mark.parametrize("board_name", ["pluto"])
 @pytest.mark.parametrize(
