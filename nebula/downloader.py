@@ -961,7 +961,9 @@ class downloader(utils):
         if self.board_name and "rpi5" in self.board_name.lower():
             return "64bit"
         if kernel:
-            kernel_name = kernel if isinstance(kernel, str) else (kernel[0] if kernel else "")
+            kernel_name = (
+                kernel if isinstance(kernel, str) else (kernel[0] if kernel else "")
+            )
             if "2712" in kernel_name:
                 return "64bit"
         if self.modules and "v8" in str(self.modules).lower():
@@ -1018,7 +1020,13 @@ class downloader(utils):
             self.download(url, file)
 
         if not kernel:
-            kernel = ["kernel.img", "kernel7.img", "kernel7l.img", "kernel_2712.img", "kernel8.img"]
+            kernel = [
+                "kernel.img",
+                "kernel7.img",
+                "kernel7l.img",
+                "kernel_2712.img",
+                "kernel8.img",
+            ]
         else:
             kernel = [kernel]
 
