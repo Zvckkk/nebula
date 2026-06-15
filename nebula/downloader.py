@@ -585,19 +585,19 @@ class downloader(utils):
             )
 
         headers = self._get_cloudsmith_headers(api_key)
-        file_queries = self._construct_file_queries(
+        query = self._construct_combined_query(
             branch, kernel, dt, board_name, kernel_root, version=version
         )
         boot_files = [kernel, "BOOT.BIN", "bootgen_sysfiles.tgz", dt]
 
-        for filename in boot_files:
-            all_packages = self._fetch_all_packages(
-                headers, file_queries[filename], filename
-            )
-            filtered_packages = self._filter_packages(all_packages)
+        all_packages = self._fetch_all_packages(headers, query, "boot_files")
+        filtered_packages = self._filter_packages(all_packages)
 
-            if filtered_packages:
-                self._download_and_verify_file(filtered_packages[0], filename)
+        # Match each required file from the combined results
+        for filename in boot_files:
+            matched = self._match_package_by_filename(filtered_packages, filename)
+            if matched:
+                self._download_and_verify_file(matched, filename)
             else:
                 raise Exception(
                     f"No package found for {filename} with version {branch} and board {board_name}"
@@ -610,29 +610,43 @@ class downloader(utils):
             "Accept": "application/json",
         }
 
-    def _construct_file_queries(self, branch, kernel, dt, board_name, kernel_root, version=None):
-        """Construct queries for fetching files from Cloudsmith."""
+    def _construct_combined_query(self, branch, kernel, dt, board_name, kernel_root, version=None):
+        """Construct a single combined query for fetching all boot files from Cloudsmith."""
         if version:
             log.info(f"Using specified version path for Cloudsmith query: {version}")
-            if branch == "main" or branch == "2026_r1":
-                version_prefix = version + "/boot_partition"
-            else:    
-                version_prefix = version
+            version_prefix = self._get_initial_metadata(
+                branch, kernel, version.rstrip("/") + "/", kernel_root
+            )
         else:
             package_version = f"boot_partition/{branch}/"
-            # Returns the full prefix derived from actual package data, e.g.
-            # "boot_partition/2023_r2/2026_01_09-06_32_27" or
-            # "boot_partition/main/2025_06_23-10_05_14/boot_partition" (extra segment)
             version_prefix = self._get_initial_metadata(
                 branch, kernel, package_version, kernel_root
             )
 
-        return {
-            kernel: f"version:{version_prefix}/{kernel_root}%20AND%20name:*mage$",
-            "BOOT.BIN": f"version:{version_prefix}/{board_name}*%20AND%20name:^BOOT.BIN$",
-            "bootgen_sysfiles.tgz": f"version:{version_prefix}/{board_name}%20AND%20name:^bootgen_sysfiles.tgz$",
-            dt: f"version:{version_prefix}/{board_name}*%20AND%20name:*.dtb$",
-        }
+        # Single query: match both version paths (board-specific OR kernel-common)
+        # AND filter to only the 4 needed file types
+        query = (
+            f"(version:{version_prefix}/{board_name}*"
+            f"%20OR%20version:{version_prefix}/{kernel_root})"
+            f"%20AND%20"
+            f"(name:^BOOT.BIN$%20OR%20name:^bootgen_sysfiles.tgz$%20OR%20name:*.dtb$%20OR%20name:*mage$)"
+        )
+        # log.info(f"Combined Cloudsmith query: {query}")
+        return query
+
+    def _match_package_by_filename(self, packages, filename):
+        """Find the best matching package for a given filename from combined results."""
+        for pkg in packages:
+            pkg_name = pkg.get("name", "")
+            if filename == "BOOT.BIN" and pkg_name == "BOOT.BIN":
+                return pkg
+            elif filename == "bootgen_sysfiles.tgz" and pkg_name == "bootgen_sysfiles.tgz":
+                return pkg
+            elif filename.endswith(".dtb") and pkg_name.endswith(".dtb"):
+                return pkg
+            elif filename in ("Image", "uImage") and (pkg_name.endswith("mage") or pkg_name in ("Image", "uImage")):
+                return pkg
+        return None
 
     def _fetch_all_packages(self, headers, query, filename):
         """Fetch all packages from Cloudsmith based on the query."""
@@ -643,7 +657,7 @@ class downloader(utils):
 
         while url:
             log.info(f"Fetching page {page} for {filename}")
-            resp = requests.get(url, headers=headers)
+            resp = self.retry_session().get(url, headers=headers)
             resp.raise_for_status()
             page_data = resp.json()
 
@@ -671,6 +685,7 @@ class downloader(utils):
         """Filter packages based on status and format."""
         return [
             {
+                "name": pkg.get("name"),
                 "cdn_url": pkg.get("cdn_url"),
                 "version": pkg.get("version"),
                 "checksum_sha256": pkg.get("checksum_sha256"),
@@ -705,7 +720,9 @@ class downloader(utils):
         """
         log.info(f"Fetching initial metadata with branch {branch}")
         headers = self._get_cloudsmith_headers(self.cloudsmith_token)
-        query = f"version:boot_partition/{branch}*%20AND%20name:{filename}$"
+        # Derive the query from package_version so it works for any root prefix
+        # (legacy "boot_partition/" or new "sdg-generic-development/boot_partition/")
+        query = f"version:{package_version.rstrip('/')}*"
         page = 1
         url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size=500"
         log.info(f"Initial metadata query URL: {url}")
@@ -1272,8 +1289,8 @@ class downloader(utils):
         with open(res) as f:
             board_configs = yaml.load(f, Loader=yaml.FullLoader)
 
-        if "-v" in design_name:
-            design_name = design_name.split("-v")[0]
+        if re.search(r"-v\d+$", design_name):
+            design_name = re.sub(r"-v\d+$", "", design_name)
 
         reference_boot_folder = self.reference_boot_folder
         devicetree_subfolder = self.devicetree_subfolder
