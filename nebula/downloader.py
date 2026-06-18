@@ -610,7 +610,9 @@ class downloader(utils):
             "Accept": "application/json",
         }
 
-    def _construct_combined_query(self, branch, kernel, dt, board_name, kernel_root, version=None):
+    def _construct_combined_query(
+        self, branch, kernel, dt, board_name, kernel_root, version=None
+    ):
         """Construct a single combined query for fetching all boot files from Cloudsmith."""
         if version:
             log.info(f"Using specified version path for Cloudsmith query: {version}")
@@ -640,22 +642,28 @@ class downloader(utils):
             pkg_name = pkg.get("name", "")
             if filename == "BOOT.BIN" and pkg_name == "BOOT.BIN":
                 return pkg
-            elif filename == "bootgen_sysfiles.tgz" and pkg_name == "bootgen_sysfiles.tgz":
+            elif (
+                filename == "bootgen_sysfiles.tgz"
+                and pkg_name == "bootgen_sysfiles.tgz"
+            ):
                 return pkg
             elif filename.endswith(".dtb") and pkg_name.endswith(".dtb"):
                 return pkg
-            elif filename in ("Image", "uImage") and (pkg_name.endswith("mage") or pkg_name in ("Image", "uImage")):
+            elif filename in ("Image", "uImage") and (
+                pkg_name.endswith("mage") or pkg_name in ("Image", "uImage")
+            ):
                 return pkg
         return None
 
-    def _fetch_all_packages(self, headers, query, filename):
+    def _fetch_all_packages(self, headers, query, filename, max_pages=3):
         """Fetch all packages from Cloudsmith based on the query."""
         all_packages = []
         page = 1
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size=500"
+        page_size = 500
+        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Fetching Cloudsmith metadata for {filename} via REST API: {url}")
 
-        while url:
+        while url and page <= max_pages:
             log.info(f"Fetching page {page} for {filename}")
             resp = self.retry_session().get(url, headers=headers)
             resp.raise_for_status()
@@ -666,12 +674,19 @@ class downloader(utils):
                 url = page_data.get("next")
             elif isinstance(page_data, list):
                 all_packages.extend(page_data)
-                url = None
+                if len(page_data) >= page_size:
+                    page += 1
+                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+                else:
+                    url = None
             else:
                 log.error("Unexpected response format from Cloudsmith API")
                 raise Exception("Unexpected response format from Cloudsmith API")
 
-            page += 1
+        if page > max_pages and url:
+            log.warning(
+                f"Reached max page limit ({max_pages}) for {filename}, stopping pagination"
+            )
 
         # Log the total number of packages found
         if len(all_packages) == 0:
@@ -708,7 +723,9 @@ class downloader(utils):
             self.check(out_path, sha256, hash_type="sha256")
         log.info(f"Downloaded and verified: {out_path}")
 
-    def _get_initial_metadata(self, branch, filename, package_version, kernel_root=None):
+    def _get_initial_metadata(
+        self, branch, filename, package_version, kernel_root=None
+    ):
         """
         Query Cloudsmith for packages matching the branch and filename, then return
         the full version prefix (everything before the board/kernel subfolder) for
@@ -724,11 +741,13 @@ class downloader(utils):
         # (legacy "boot_partition/" or new "sdg-generic-development/boot_partition/")
         query = f"version:{package_version.rstrip('/')}*"
         page = 1
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size=500"
+        page_size = 500
+        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Initial metadata query URL: {url}")
 
+        max_pages = 3
         all_packages = []
-        while url:
+        while url and page <= max_pages:
             log.info(f"Fetching page {page} for initial metadata (branch: {branch})")
             resp = requests.get(url, headers=headers)
             resp.raise_for_status()
@@ -739,12 +758,19 @@ class downloader(utils):
                 url = page_data.get("next")
             elif isinstance(page_data, list):
                 all_packages.extend(page_data)
-                url = None
+                if len(page_data) >= page_size:
+                    page += 1
+                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+                else:
+                    url = None
             else:
                 log.error("Unexpected response format from Cloudsmith API")
                 raise Exception("Unexpected response format from Cloudsmith API")
 
-            page += 1
+        if page > max_pages and url:
+            log.warning(
+                f"Reached max page limit ({max_pages}) for initial metadata, stopping pagination"
+            )
 
         log.info(f"Total packages fetched for initial metadata: {len(all_packages)}")
 
@@ -805,7 +831,9 @@ class downloader(utils):
         version=None,
     ):
         if source == "cloudsmith":
-            self._get_cloudsmith_file(branch, kernel, dt, self.board_name, kernel_root, version=version)
+            self._get_cloudsmith_file(
+                branch, kernel, dt, self.board_name, kernel_root, version=version
+            )
 
         elif source == "artifactory":
             if url_template:
