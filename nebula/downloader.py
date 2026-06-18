@@ -652,7 +652,8 @@ class downloader(utils):
         """Fetch all packages from Cloudsmith based on the query."""
         all_packages = []
         page = 1
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size=500"
+        page_size = 500
+        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Fetching Cloudsmith metadata for {filename} via REST API: {url}")
 
         while url:
@@ -666,12 +667,14 @@ class downloader(utils):
                 url = page_data.get("next")
             elif isinstance(page_data, list):
                 all_packages.extend(page_data)
-                url = None
+                if len(page_data) >= page_size:
+                    page += 1
+                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+                else:
+                    url = None
             else:
                 log.error("Unexpected response format from Cloudsmith API")
                 raise Exception("Unexpected response format from Cloudsmith API")
-
-            page += 1
 
         # Log the total number of packages found
         if len(all_packages) == 0:
@@ -724,7 +727,8 @@ class downloader(utils):
         # (legacy "boot_partition/" or new "sdg-generic-development/boot_partition/")
         query = f"version:{package_version.rstrip('/')}*"
         page = 1
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size=500"
+        page_size = 500
+        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Initial metadata query URL: {url}")
 
         all_packages = []
@@ -739,12 +743,14 @@ class downloader(utils):
                 url = page_data.get("next")
             elif isinstance(page_data, list):
                 all_packages.extend(page_data)
-                url = None
+                if len(page_data) >= page_size:
+                    page += 1
+                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+                else:
+                    url = None
             else:
                 log.error("Unexpected response format from Cloudsmith API")
                 raise Exception("Unexpected response format from Cloudsmith API")
-
-            page += 1
 
         log.info(f"Total packages fetched for initial metadata: {len(all_packages)}")
 
