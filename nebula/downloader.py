@@ -648,7 +648,7 @@ class downloader(utils):
                 return pkg
         return None
 
-    def _fetch_all_packages(self, headers, query, filename):
+    def _fetch_all_packages(self, headers, query, filename, max_pages=3):
         """Fetch all packages from Cloudsmith based on the query."""
         all_packages = []
         page = 1
@@ -656,7 +656,7 @@ class downloader(utils):
         url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Fetching Cloudsmith metadata for {filename} via REST API: {url}")
 
-        while url:
+        while url and page <= max_pages:
             log.info(f"Fetching page {page} for {filename}")
             resp = self.retry_session().get(url, headers=headers)
             resp.raise_for_status()
@@ -675,6 +675,9 @@ class downloader(utils):
             else:
                 log.error("Unexpected response format from Cloudsmith API")
                 raise Exception("Unexpected response format from Cloudsmith API")
+
+        if page > max_pages and url:
+            log.warning(f"Reached max page limit ({max_pages}) for {filename}, stopping pagination")
 
         # Log the total number of packages found
         if len(all_packages) == 0:
@@ -731,8 +734,9 @@ class downloader(utils):
         url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Initial metadata query URL: {url}")
 
+        max_pages = 3
         all_packages = []
-        while url:
+        while url and page <= max_pages:
             log.info(f"Fetching page {page} for initial metadata (branch: {branch})")
             resp = requests.get(url, headers=headers)
             resp.raise_for_status()
@@ -751,6 +755,9 @@ class downloader(utils):
             else:
                 log.error("Unexpected response format from Cloudsmith API")
                 raise Exception("Unexpected response format from Cloudsmith API")
+
+        if page > max_pages and url:
+            log.warning(f"Reached max page limit ({max_pages}) for initial metadata, stopping pagination")
 
         log.info(f"Total packages fetched for initial metadata: {len(all_packages)}")
 
