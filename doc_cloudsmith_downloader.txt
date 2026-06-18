@@ -1,33 +1,149 @@
 Cloudsmith Integration in Nebula Downloader
 ==================================================================
-Documentation of the changes to support cloudsmith in nebula downloader
+Documentation of the changes to support Cloudsmith as a package source in nebula downloader.
 
-Features added:
-Cloudsmith API: it uses cloudsmith API call to fetch the metadata and download files.
-                filtered it primarily with versions. service account slug name (e.g., haribo-habo-bun)
-                and service account API token is needed to pass in the cli argument.
+Overview:
+=========
+The Cloudsmith integration allows nebula to fetch boot partition files and firmware
+from Cloudsmith repositories using the Cloudsmith REST API (v1). It replaces or
+supplements the existing Artifactory-based workflow when --source=cloudsmith is specified.
 
-Board matching & Date matching: Using the selected repo metada, board matching and date matching is
-                                done to ensure the correct file is being fetched. if the passed <branch>
-                                includes "/" (e.g., 2022_r1/2024_00_00_04_00_00), it will download the file
-                                with the specific date, else it will download the latest date version.
+Authentication:
+===============
+- Requires a service account slug name and API token.
+- Passed via CLI argument: --cloudsmith-auth=<user_slug_name>:<cloudsmith_token>
+- Internally stored as self.username and self.cloudsmith_token.
+- Used for both API metadata queries (Bearer token) and file downloads (basic auth).
 
-SHA256 verification: using the metadata fetched from cloudsmith API, automatically verifies the download through
-                     cross checking of SHA256.
+Features:
+=========
 
-### CLI example:
+1. Cloudsmith REST API metadata fetching
+   - Uses https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/ endpoint.
+   - Queries filtered primarily by version string to narrow results.
+   - Supports paginated responses: fetches all pages when results exceed 500 per page.
+     (Cloudsmith v1 API returns a plain JSON list; pagination continues if a full
+      page of 500 items is returned.)
 
+2. Initial metadata & automatic date resolution (_get_initial_metadata)
+   - Queries Cloudsmith for all packages matching the branch prefix.
+   - Parses version strings to extract date segments (format: YYYY_MM_DD-HH_MM_SS).
+   - Automatically selects the latest build date when no specific date is provided.
+   - Returns the full version prefix (including any intermediate directories) so
+     subsequent queries can target the exact build.
+   - Supports both legacy "boot_partition/<branch>" and newer
+     "sdg-generic-development/boot_partition/<branch>" version layouts.
 
-nebula show-log dl.bootfiles --board-name=<board-name> --source=cloudsmith --branch=<branch>
---filetype=boot_partition --cloudsmith-auth=<user_slug_name>:<cloudsmith_token>
+3. Combined query optimization (_construct_combined_query)
+   - Constructs a single API query that fetches all boot file types at once,
+     rather than making separate requests per file.
+   - Query matches both board-specific and kernel-common version paths using OR.
+   - Filters by file type using name patterns:
+       name:^BOOT.BIN$ OR name:^bootgen_sysfiles.tgz$ OR name:*.dtb$ OR name:*mage$
 
-Major changes in the code:
-========================================================================
+4. Board matching & date matching
+   - If the passed <branch> includes a date (e.g., 2022_r1/2024_00_00_04_00_00),
+     downloads files for that specific date.
+   - Otherwise, fetches the latest date version automatically.
+   - Board-specific files matched via version path containing board_name.
+   - Common kernel files matched via kernel_root (e.g., "zynqmp-common").
 
-_get_cloudsmith_file
-    - Fetches metadata from the Cloudsmith API
-    - Filtering packages based on the branch, board_name and file type
-    - Downloading and verifying files using SHA256 checks
-    - Handles both specific date matches and fetching latest versions
+5. SHA256 verification
+   - Uses checksum_sha256 from Cloudsmith package metadata.
+   - Automatically verifies each downloaded file against its expected hash.
+   - Raises an exception if verification fails.
 
-added conditional statements to skip artifactory methods when source == "cloudsmith"
+6. Firmware downloads (non-boot-partition)
+   - Supports downloading firmware ZIPs from Cloudsmith via dl.cloudsmith.io.
+   - Handles both versioned downloads and "latest" version.
+   - Uses basic auth (username:token) for download authentication.
+
+7. Retry logic
+   - Downloads use retry_session() with configurable retries/backoff for resilience.
+   - API metadata fetches also use retry_session() (in _fetch_all_packages).
+
+CLI Examples:
+=============
+
+# Download boot partition files (latest date):
+nebula show-log dl.bootfiles --board-name=<board-name> --source=cloudsmith \
+    --branch=<branch> --filetype=boot_partition \
+    --cloudsmith-auth=<user_slug_name>:<cloudsmith_token>
+
+# Download boot partition files (specific date):
+nebula show-log dl.bootfiles --board-name=<board-name> --source=cloudsmith \
+    --branch=2026_r1/2026_01_15-08_30_00 --filetype=boot_partition \
+    --cloudsmith-auth=<user_slug_name>:<cloudsmith_token>
+
+# Download SD card image:
+nebula show-log dl.sdcard --board-name=<board-name> --source=cloudsmith \
+    --branch=<branch> --cloudsmith-auth=<user_slug_name>:<cloudsmith_token>
+
+Major Code Changes:
+===================
+
+New methods added to the downloader class:
+------------------------------------------
+
+_get_cloudsmith_file(branch, kernel, dt, board_name, kernel_root, version=None)
+    - Entry point for Cloudsmith boot file downloads.
+    - Orchestrates query construction, fetching, filtering, matching, and downloading.
+    - Iterates over required boot files: [kernel, BOOT.BIN, bootgen_sysfiles.tgz, dt].
+
+_get_cloudsmith_headers(api_key)
+    - Returns Authorization (Bearer) and Accept headers for API calls.
+
+_construct_combined_query(branch, kernel, dt, board_name, kernel_root, version=None)
+    - Builds the combined Cloudsmith query string for all boot files.
+    - Calls _get_initial_metadata to resolve the version prefix.
+
+_get_initial_metadata(branch, filename, package_version, kernel_root=None)
+    - Fetches all packages for the branch, extracts date segments from versions.
+    - Returns the full prefix path for the latest build date.
+    - Handles pagination (multiple pages of 500 results).
+
+_fetch_all_packages(headers, query, filename)
+    - Generic paginated fetch of packages from Cloudsmith API.
+    - Handles both dict-with-results and plain-list response formats.
+    - Continues fetching pages until fewer than page_size results are returned.
+
+_filter_packages(all_packages)
+    - Filters to packages with status "Completed" and format "raw".
+    - Extracts only needed fields: name, cdn_url, version, checksum_sha256.
+
+_match_package_by_filename(packages, filename)
+    - Finds the correct package from combined results for a given filename.
+    - Handles matching logic for BOOT.BIN, bootgen_sysfiles.tgz, *.dtb, and Image/uImage.
+
+_download_and_verify_file(package, filename)
+    - Downloads file from cdn_url and verifies SHA256.
+
+Modifications to existing methods:
+-----------------------------------
+
+download(url, fname, username=None, cloudsmith_token=None)
+    - Added Cloudsmith download path: detects "cloudsmith.io" in URL.
+    - Uses basic auth with service account credentials.
+    - Streams download with progress bar via tqdm.
+
+check(fname, ref, hash_type="md5")
+    - Extended to support hash_type="sha256" in addition to md5.
+
+_get_files_boot_partition(...)
+    - Added source == "cloudsmith" branch that calls _get_cloudsmith_file.
+
+_get_firmware(...)
+    - Added source == "cloudsmith" branch for firmware ZIP downloads via dl.cloudsmith.io.
+
+General:
+    - Added conditional statements throughout to skip Artifactory-specific methods
+      when source == "cloudsmith".
+
+Known Considerations:
+=====================
+- Cloudsmith REST API v1 returns a plain JSON list (not paginated dict).
+  Pagination is handled by checking if a full page (500 items) was returned.
+- The API token is passed as Bearer token for metadata queries, but basic auth
+  (username:token) is used for file downloads via dl.cloudsmith.io.
+- The version string structure in Cloudsmith encodes branch, date, and board info
+  (e.g., boot_partition/2026_r1/2026_01_15-08_30_00/boot_partition/adi-zynqmp/board-name).
