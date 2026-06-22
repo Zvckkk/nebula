@@ -652,7 +652,9 @@ class downloader(utils):
                 return pkg
         return None
 
-    def _fetch_all_packages(self, headers, query, filename, max_pages=3, repo="sdg-boot-partition"):
+    def _fetch_all_packages(
+        self, headers, query, filename, max_pages=3, repo="sdg-boot-partition"
+    ):
         """Fetch all packages from Cloudsmith based on the query."""
         all_packages = []
         page = 1
@@ -720,7 +722,13 @@ class downloader(utils):
         log.info(f"Downloaded and verified: {out_path}")
 
     def _get_initial_metadata(
-        self, branch, filename, package_version, kernel_root=None, repo="sdg-boot-partition", date_format="%Y_%m_%d-%H_%M_%S"
+        self,
+        branch,
+        filename,
+        package_version,
+        kernel_root=None,
+        repo="sdg-boot-partition",
+        date_format="%Y_%m_%d-%H_%M_%S",
     ):
         """
         Query Cloudsmith for packages matching the branch and filename, then return
@@ -804,9 +812,7 @@ class downloader(utils):
                         pass
                     break  # at most one date per version string
 
-        log.info(
-            f"Dates found: {[d.strftime(date_format) for d in date_to_prefix]}"
-        )
+        log.info(f"Dates found: {[d.strftime(date_format) for d in date_to_prefix]}")
 
         if not date_to_prefix:
             raise Exception(f"No valid dates found in metadata for {filename}")
@@ -1058,7 +1064,7 @@ class downloader(utils):
             return "64bit"
         return "32bit"
 
-    def _get_cloudsmith_rpi_files(self, branch, kernel, devicetree, devicetree_overlay, modules, version=None):
+    def _get_cloudsmith_rpi_files(self, branch, kernel, version=None):
         """Fetch RPi boot files and modules from Cloudsmith (sdg-linux-rpi repo)."""
         log.info("Getting RPi files from Cloudsmith")
         api_key = self.cloudsmith_token
@@ -1078,8 +1084,11 @@ class downloader(utils):
 
         # Find the latest build date using shared metadata function
         version_prefix = self._get_initial_metadata(
-            branch, "rpi_files", package_version,
-            repo="sdg-linux-rpi", date_format="%Y_%m_%d-%H_%M"
+            branch,
+            "rpi_files",
+            package_version,
+            repo="sdg-linux-rpi",
+            date_format="%Y_%m_%d-%H_%M",
         )
 
         boot_tar = f"rpi_latest_boot_{arch}.tar.gz"
@@ -1127,9 +1136,7 @@ class downloader(utils):
             os.mkdir(dest)
 
         if source == "cloudsmith":
-            self._get_cloudsmith_rpi_files(
-                branch, kernel, devicetree, devicetree_overlay, modules, version=version
-            )
+            self._get_cloudsmith_rpi_files(branch, kernel, version=version)
             return
 
         # download properties.txt
