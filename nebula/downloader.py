@@ -1176,13 +1176,17 @@ class downloader(utils):
             self.download(url, file)
 
         if not kernel:
-            kernel = [
-                "kernel.img",
-                "kernel7.img",
-                "kernel7l.img",
-                "kernel_2712.img",
-                "kernel8.img",
-            ]
+            if arch == "64bit":
+                kernel = [
+                    "kernel_2712.img",
+                    "kernel8.img",
+                ]
+            else:
+                kernel = [
+                    "kernel.img",
+                    "kernel7.img",
+                    "kernel7l.img",
+                ]
         else:
             kernel = [kernel]
 
