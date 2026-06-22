@@ -624,9 +624,6 @@ class downloader(utils):
             version_prefix = self._get_initial_metadata(
                 branch, kernel, package_version, kernel_root
             )
-
-        # Single query: match both version paths (board-specific OR kernel-common)
-        # AND filter to only the 4 needed file types
         query = (
             f"(version:{version_prefix}/{board_name}*"
             f"%20OR%20version:{version_prefix}/{kernel_root})"
@@ -655,12 +652,12 @@ class downloader(utils):
                 return pkg
         return None
 
-    def _fetch_all_packages(self, headers, query, filename, max_pages=3):
+    def _fetch_all_packages(self, headers, query, filename, max_pages=3, repo="sdg-boot-partition"):
         """Fetch all packages from Cloudsmith based on the query."""
         all_packages = []
         page = 1
         page_size = 500
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+        url = f"https://api.cloudsmith.io/v1/packages/adi/{repo}/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Fetching Cloudsmith metadata for {filename} via REST API: {url}")
 
         while url and page <= max_pages:
@@ -676,7 +673,7 @@ class downloader(utils):
                 all_packages.extend(page_data)
                 if len(page_data) >= page_size:
                     page += 1
-                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+                    url = f"https://api.cloudsmith.io/v1/packages/adi/{repo}/?query={query}&page={page}&page_size={page_size}"
                 else:
                     url = None
             else:
@@ -688,7 +685,6 @@ class downloader(utils):
                 f"Reached max page limit ({max_pages}) for {filename}, stopping pagination"
             )
 
-        # Log the total number of packages found
         if len(all_packages) == 0:
             raise Exception(f"No packages found for {filename} with query: {query}")
         else:
@@ -724,7 +720,7 @@ class downloader(utils):
         log.info(f"Downloaded and verified: {out_path}")
 
     def _get_initial_metadata(
-        self, branch, filename, package_version, kernel_root=None
+        self, branch, filename, package_version, kernel_root=None, repo="sdg-boot-partition", date_format="%Y_%m_%d-%H_%M_%S"
     ):
         """
         Query Cloudsmith for packages matching the branch and filename, then return
@@ -737,12 +733,10 @@ class downloader(utils):
         """
         log.info(f"Fetching initial metadata with branch {branch}")
         headers = self._get_cloudsmith_headers(self.cloudsmith_token)
-        # Derive the query from package_version so it works for any root prefix
-        # (legacy "boot_partition/" or new "sdg-generic-development/boot_partition/")
         query = f"version:{package_version.rstrip('/')}*"
         page = 1
         page_size = 500
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+        url = f"https://api.cloudsmith.io/v1/packages/adi/{repo}/?query={query}&page={page}&page_size={page_size}"
         log.info(f"Initial metadata query URL: {url}")
 
         max_pages = 3
@@ -760,7 +754,7 @@ class downloader(utils):
                 all_packages.extend(page_data)
                 if len(page_data) >= page_size:
                     page += 1
-                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-boot-partition/?query={query}&page={page}&page_size={page_size}"
+                    url = f"https://api.cloudsmith.io/v1/packages/adi/{repo}/?query={query}&page={page}&page_size={page_size}"
                 else:
                     url = None
             else:
@@ -774,7 +768,16 @@ class downloader(utils):
 
         log.info(f"Total packages fetched for initial metadata: {len(all_packages)}")
 
-        date_pattern = re.compile(r"^20\d{2}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}$")
+        # Build regex from date_format: replace strptime directives with digit matchers
+        date_regex = date_format
+        date_regex = date_regex.replace("%Y", r"20\d{2}")
+        date_regex = date_regex.replace("%m", r"\d{2}")
+        date_regex = date_regex.replace("%d", r"\d{2}")
+        date_regex = date_regex.replace("%H", r"\d{2}")
+        date_regex = date_regex.replace("%M", r"\d{2}")
+        date_regex = date_regex.replace("%S", r"\d{2}")
+        date_pattern = re.compile(f"^{date_regex}$")
+
         pkg_version_base = package_version.rstrip("/")
         date_to_prefix = {}
         for pkg in all_packages:
@@ -785,7 +788,7 @@ class downloader(utils):
             for i, segment in enumerate(segments):
                 if date_pattern.match(segment):
                     try:
-                        date_obj = datetime.strptime(segment, "%Y_%m_%d-%H_%M_%S")
+                        date_obj = datetime.strptime(segment, date_format)
                         # Build prefix: everything before the kernel_root/board subfolder.
                         # This captures any extra intermediate directories (e.g. an extra
                         # 'boot_partition' segment present in some branches).
@@ -802,7 +805,7 @@ class downloader(utils):
                     break  # at most one date per version string
 
         log.info(
-            f"Dates found: {[d.strftime('%Y_%m_%d-%H_%M_%S') for d in date_to_prefix]}"
+            f"Dates found: {[d.strftime(date_format) for d in date_to_prefix]}"
         )
 
         if not date_to_prefix:
@@ -811,7 +814,7 @@ class downloader(utils):
         latest_date = max(date_to_prefix.keys())
         latest_prefix = date_to_prefix[latest_date]
         log.info(
-            f"Latest date: {latest_date.strftime('%Y_%m_%d-%H_%M_%S')}, "
+            f"Latest date: {latest_date.strftime(date_format)}, "
             f"version prefix: {latest_prefix}"
         )
         return latest_prefix
@@ -1068,18 +1071,17 @@ class downloader(utils):
         arch = self._detect_rpi_arch(kernel)
         log.info(f"Detected RPi architecture: {arch}")
 
-        # Determine version prefix for the query
         if version:
             package_version = version.rstrip("/") + "/"
         else:
             package_version = f"linux_rpi/releases/{branch}/"
 
-        # Find the latest build date
-        version_prefix = self._get_rpi_cloudsmith_latest_version(
-            headers, package_version
+        # Find the latest build date using shared metadata function
+        version_prefix = self._get_initial_metadata(
+            branch, "rpi_files", package_version,
+            repo="sdg-linux-rpi", date_format="%Y_%m_%d-%H_%M"
         )
 
-        # The 4 files available per arch
         boot_tar = f"rpi_latest_boot_{arch}.tar.gz"
         modules_tar = f"rpi_modules_{arch}.tar.gz"
         rpi_files = [boot_tar, modules_tar]
@@ -1090,142 +1092,24 @@ class downloader(utils):
             f"(name:{boot_tar}%20OR%20name:{modules_tar})"
         )
 
-        all_packages = self._fetch_rpi_packages(headers, query)
+        all_packages = self._fetch_all_packages(
+            headers, query, "rpi_files", repo="sdg-linux-rpi"
+        )
         filtered_packages = self._filter_packages(all_packages)
 
         dest = "outs"
         os.makedirs(dest, exist_ok=True)
 
         for filename in rpi_files:
-            matched = self._match_rpi_package(filtered_packages, filename)
+            matched = next(
+                (p for p in filtered_packages if p.get("name") == filename), None
+            )
             if matched:
                 self._download_and_verify_file(matched, filename)
             else:
                 raise Exception(
                     f"No package found for {filename} with version prefix {version_prefix}"
                 )
-
-        # Extract boot tar (contains kernels, dtbs, overlays)
-        #boot_tar_path = os.path.join(dest, boot_tar)
-        #log.info(f"Extracting boot files from {boot_tar}")
-        #with tarfile.open(boot_tar_path) as tf:
-        #    tf.extractall(path=dest)
-
-        # Extract modules tar
-        #modules_tar_path = os.path.join(dest, modules_tar)
-        #log.info(f"Extracting modules from {modules_tar}")
-        #with tarfile.open(modules_tar_path) as tf:
-        #    if modules:
-        #        log.info("Extracting module " + modules)
-        #        module_files = [
-        #            tarinfo
-        #            for tarinfo in tf.getmembers()
-        #            if tarinfo.name.startswith(f"./{modules}")
-        #        ]
-        #    else:
-        #        log.info("Extracting all modules")
-        #        module_files = [tarinfo for tarinfo in tf.getmembers()]
-        #    tf.extractall(path=dest, members=module_files)
-
-    def _get_rpi_cloudsmith_latest_version(self, headers, package_version):
-        """Query Cloudsmith sdg-linux-rpi repo and return the latest version prefix."""
-        query = f"version:{package_version.rstrip('/')}*"
-        page = 1
-        page_size = 500
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-linux-rpi/?query={query}&page={page}&page_size={page_size}"
-        log.info(f"RPi Cloudsmith initial metadata query: {url}")
-
-        max_pages = 3
-        all_packages = []
-        while url and page <= max_pages:
-            log.info(f"Fetching page {page} for RPi metadata")
-            resp = self.retry_session().get(url, headers=headers)
-            resp.raise_for_status()
-            page_data = resp.json()
-
-            if isinstance(page_data, dict) and "results" in page_data:
-                all_packages.extend(page_data["results"])
-                url = page_data.get("next")
-            elif isinstance(page_data, list):
-                all_packages.extend(page_data)
-                if len(page_data) >= page_size:
-                    page += 1
-                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-linux-rpi/?query={query}&page={page}&page_size={page_size}"
-                else:
-                    url = None
-            else:
-                raise Exception("Unexpected response format from Cloudsmith API")
-
-        if not all_packages:
-            raise Exception(f"No packages found in sdg-linux-rpi with query: {query}")
-
-        log.info(f"Total RPi packages fetched for metadata: {len(all_packages)}")
-
-        date_pattern = re.compile(r"^20\d{2}_\d{2}_\d{2}-\d{2}_\d{2}$")
-        pkg_version_base = package_version.rstrip("/")
-        date_to_prefix = {}
-        for pkg in all_packages:
-            version = pkg.get("version", "").rstrip("/")
-            if not version.startswith(pkg_version_base):
-                continue
-            segments = version.split("/")
-            for i, segment in enumerate(segments):
-                if date_pattern.match(segment):
-                    try:
-                        date_obj = datetime.strptime(segment, "%Y_%m_%d-%H_%M")
-                        prefix = "/".join(segments[: i + 1])
-                        if date_obj not in date_to_prefix:
-                            date_to_prefix[date_obj] = prefix
-                    except ValueError:
-                        continue
-
-        if not date_to_prefix:
-            raise Exception(f"No valid dates found in RPi metadata for {pkg_version_base}")
-
-        latest_date = max(date_to_prefix.keys())
-        latest_prefix = date_to_prefix[latest_date]
-        log.info(f"Latest RPi build date: {latest_date}, version prefix: {latest_prefix}")
-        return latest_prefix
-
-    def _fetch_rpi_packages(self, headers, query, max_pages=3):
-        """Fetch packages from Cloudsmith sdg-linux-rpi repo."""
-        all_packages = []
-        page = 1
-        page_size = 500
-        url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-linux-rpi/?query={query}&page={page}&page_size={page_size}"
-        log.info(f"Fetching RPi packages from Cloudsmith: {url}")
-
-        while url and page <= max_pages:
-            log.info(f"Fetching page {page} for RPi packages")
-            resp = self.retry_session().get(url, headers=headers)
-            resp.raise_for_status()
-            page_data = resp.json()
-
-            if isinstance(page_data, dict) and "results" in page_data:
-                all_packages.extend(page_data["results"])
-                url = page_data.get("next")
-            elif isinstance(page_data, list):
-                all_packages.extend(page_data)
-                if len(page_data) >= page_size:
-                    page += 1
-                    url = f"https://api.cloudsmith.io/v1/packages/adi/sdg-linux-rpi/?query={query}&page={page}&page_size={page_size}"
-                else:
-                    url = None
-            else:
-                raise Exception("Unexpected response format from Cloudsmith API")
-
-        if not all_packages:
-            raise Exception(f"No RPi packages found with query: {query}")
-
-        log.info(f"Total RPi packages found: {len(all_packages)}")
-        return all_packages
-
-    def _match_rpi_package(self, packages, filename):
-        """Find the matching package for a given RPi filename."""
-        for pkg in packages:
-            if pkg.get("name", "") == filename:
-                return pkg
-        return None
 
     def _get_files_rpi(
         self,
