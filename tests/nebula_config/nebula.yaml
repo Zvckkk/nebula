@@ -128,3 +128,66 @@ zynqmp-zcu102-rev10-adrv9002-rx2tx2-vcmos:
         - axi-adrv9002-rx-lpc
         - axi-core-tdd
         - axi-adrv9002-tx-lpc
+zynqmp-zcu102-rev10-adrv9002:
+  board-config:
+    - board-name: zynqmp-zcu102-rev10-adrv9002
+    - carrier: ZCU102
+    - daughter: ADRV9002-RX2TX2-LVDS
+    - monitoring-interface: uart
+    - allow-jtag: True
+  downloader-config:
+    - reference_boot_folder: zynqmp-zcu102-rev10-adrv9002
+    - devicetree_subfolder: zynqmp-zcu102-rev10-adrv9002
+    - boot_subfolder: boot_bin_CMOS
+    - hdl_folder: adrv9001_zcu102
+  driver-config:
+    - iio_device_names:
+        - adrv9002-phy
+        - axi-adrv9002-rx-lpc
+        - axi-core-tdd
+        - axi-adrv9002-tx-lpc
+zynqmp-zcu102-rev10-adrv9002-rx2tx2-vlvds:
+  board-config:
+    - board-name: zynqmp-zcu102-rev10-adrv9002-rx2tx2-vlvds
+    - carrier: ZCU102
+    - daughter: ADRV9002-RX2TX2-LVDS
+    - monitoring-interface: uart
+    - allow-jtag: True
+  downloader-config:
+    - reference_boot_folder: zynqmp-zcu102-rev10-adrv9002
+    - devicetree_subfolder: zynqmp-zcu102-rev10-adrv9002-rx2tx2
+    - boot_subfolder: boot_bin_LVDS
+    - hdl_folder: adrv9001_zcu102
+  driver-config:
+    - iio_device_names:
+        - adrv9002-phy
+        - axi-adrv9002-rx-lpc
+        - axi-core-tdd
+        - axi-adrv9002-tx-lpc
+zynqmp-zcu102-rev10-ad9172-fmc-ebz-mode4:
+  board-config:
+    - board-name: zynqmp-zcu102-rev10-ad9172-fmc-ebz-mode4
+    - carrier: ZCU102
+    - daughter: EVAL-AD9172
+    - monitoring-interface: uart
+    - allow-jtag: True
+  downloader-config:
+    - reference_boot_folder: zynqmp-zcu102-rev10-ad9172-fmc-ebz-mode4
+    - hdl_folder: ad9172_fmc_zcu102
+zynqmp-zcu102-rev10-ad9081:
+  board-config:
+    - board-name: zynqmp-zcu102-rev10-ad9081
+    - carrier: ZCU102
+    - daughter: AD9081-M4-L8
+    - monitoring-interface: uart
+    - allow-jtag: True
+  downloader-config:
+    - reference_boot_folder: zynqmp-zcu102-rev10-ad9081
+    - devicetree_subfolder: m4_l8
+    - boot_subfolder: m4_l8
+    - hdl_folder: ad9081_fmca_ebz_zcu102_m4_l8
+  driver-config:
+    - iio_device_names:
+        - hmc7044
+        - axi-ad9081-rx-hpc
+        - axi-ad9081-tx-hpc
